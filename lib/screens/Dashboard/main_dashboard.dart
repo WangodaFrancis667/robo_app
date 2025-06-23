@@ -1,26 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:robo_app/screens/live_feed/live_monitoring_screen.dart';
 import 'package:robo_app/screens/controls/robot_control_screen.dart';
-//import 'package:http/http.dart' as http;
-//import 'dart:convert';
-//import 'dart:async';
+import 'package:robo_app/screens/sensors/sensor_dashboard_screen.dart';
+import 'package:robo_app/screens/logs/weeding_logs_screen.dart';
 
 class MainDashboard extends StatefulWidget {
   const MainDashboard({super.key});
 
   @override
-  _MainDashboardState createState() => _MainDashboardState();
+  MainDashboardState createState() => MainDashboardState();
 }
 
-class _MainDashboardState extends State<MainDashboard> {
+class MainDashboardState extends State<MainDashboard> {
   int _currentIndex = 0;
 
-  final String baseUrl = 'http://192.168.1.100:500';
+  final String baseUrl = 'http://192.168.1.100:5000';
 
   final List<Widget> _screens = [
     LiveMonitoringScreen(),
     RobotControlScreen(),
-    //WeedingLogsScreen(),
+    SensorDashboardScreen(),
+    WeedingLogsScreen(),
   ];
 
   @override
