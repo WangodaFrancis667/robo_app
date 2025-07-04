@@ -42,7 +42,7 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
   final String controlUrl = 'http://192.168.1.6:5000/control';
   // MJPEG camera stream URL (replace with your Mac's actual IP and port)
   final String streamUrl =
-      'http://192.168.1.6:5000/stream'; // Using user's provided stream URL
+      'http://192.168.1.6:8080/my_mac_camera'; // Using user's provided stream URL
 
   // State variables for robot status and controls
   bool isEmergencyStop = false;
@@ -61,6 +61,8 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
   // State variables for UI feedback.
   bool _isLoadingStream = false; // Renamed to be specific to stream loading
   String _errorMessage = '';
+  int _retryCount = 0;
+  static const int _maxRetries = 3;
 
   @override
   void initState() {
@@ -75,6 +77,7 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
     setState(() {
       _isLoadingStream = true;
       _errorMessage = '';
+      _retryCount = 0; // Reset retry count
       _imageStreamController?.close(); // Close any previous stream.
       _imageStreamController = StreamController<Uint8List>();
       _streamClient?.close(); // Close any previous HTTP client.
@@ -190,37 +193,61 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
           // Error handling for the stream.
           onError: (error) {
             debugPrint('Stream error: $error');
-            setState(() {
-              _errorMessage = 'Stream error: $error';
-              _isLoadingStream = false;
-            });
+            if (mounted) {
+              setState(() {
+                _errorMessage = 'Stream error: $error';
+                _isLoadingStream = false;
+              });
+            }
             _imageStreamController?.close();
           },
           // Called when the stream finishes (e.g., server closes connection).
           onDone: () {
             debugPrint('Stream finished.');
-            setState(() {
-              _isLoadingStream = false;
-            });
+            if (mounted) {
+              setState(() {
+                _isLoadingStream = false;
+              });
+            }
             _imageStreamController?.close();
           },
         );
       } else {
         // Handle non-200 HTTP status codes.
-        setState(() {
-          _errorMessage =
-              'Failed to connect: ${response.statusCode} ${response.reasonPhrase}';
-          _isLoadingStream = false;
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage =
+                'Failed to connect: ${response.statusCode} ${response.reasonPhrase}';
+            _isLoadingStream = false;
+          });
+        }
         _imageStreamController?.close();
       }
     } catch (e) {
       // Catch any network or parsing errors.
       debugPrint('Error sending request: $e');
-      setState(() {
-        _errorMessage = 'Error connecting: $e';
-        _isLoadingStream = false;
-      });
+
+      // Implement retry logic for connection failures
+      if (_retryCount < _maxRetries) {
+        _retryCount++;
+        debugPrint('Retrying connection... Attempt $_retryCount/$_maxRetries');
+        debugPrint('Error details: $e');
+        await Future.delayed(
+          Duration(seconds: _retryCount * 2),
+        ); // Exponential backoff
+        if (mounted) {
+          _startStreaming(url); // Retry
+        }
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              'Error connecting: $e${_retryCount >= _maxRetries ? ' (Max retries reached)' : ''}';
+          _isLoadingStream = false;
+        });
+      }
       _imageStreamController?.close();
     }
   }
@@ -249,12 +276,15 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
     _responseSubscription?.cancel(); // Cancel the stream subscription.
     _imageStreamController?.close(); // Close the image stream controller.
     _streamClient?.close(); // Close the HTTP client.
-    setState(() {
-      _isLoadingStream = false;
-      _imageStreamController = null;
-      _streamClient = null;
-      _errorMessage = '';
-    });
+    if (mounted) {
+      setState(() {
+        _isLoadingStream = false;
+        _imageStreamController = null;
+        _streamClient = null;
+        _errorMessage = '';
+        _retryCount = 0;
+      });
+    }
   }
 
   @override
@@ -344,13 +374,28 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
                             if (_errorMessage.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 10.0),
-                                child: Text(
-                                  _errorMessage,
-                                  style: const TextStyle(
-                                    color: Colors.red,
-                                    fontSize: 14,
-                                  ),
-                                  textAlign: TextAlign.center,
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      _errorMessage,
+                                      style: const TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 14,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    ElevatedButton.icon(
+                                      onPressed: () =>
+                                          _startStreaming(streamUrl),
+                                      icon: const Icon(Icons.refresh),
+                                      label: const Text('Retry Connection'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                           ],
@@ -538,6 +583,19 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
       }
     } catch (e) {
       debugPrint('Error sending return home command: $e');
+    }
+  }
+
+  /// Test basic connectivity to the server
+  Future<bool> _testConnectivity(String url) async {
+    try {
+      debugPrint('Testing basic connectivity to: $url');
+      final response = await http.get(Uri.parse(url)).timeout(Duration(seconds: 5));
+      debugPrint('Test response status: ${response.statusCode}');
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Connectivity test failed: $e');
+      return false;
     }
   }
 }
