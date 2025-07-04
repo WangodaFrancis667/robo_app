@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Internet permission required for HTTP requests -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Network state permission for better error handling -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
     <application
         android:label="robo_app"
         android:name="${applicationName}"
