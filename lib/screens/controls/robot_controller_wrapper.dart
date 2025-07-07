@@ -3,7 +3,7 @@ import 'robot_control_screen.dart';
 
 class RobotControllerWrapper extends StatefulWidget {
   final Function(bool)? onConnectionStatusChanged;
-  
+
   const RobotControllerWrapper({super.key, this.onConnectionStatusChanged});
 
   @override
@@ -12,12 +12,12 @@ class RobotControllerWrapper extends StatefulWidget {
 
 class _RobotControllerWrapperState extends State<RobotControllerWrapper> {
   bool _isConnected = false;
-  
+
   void _handleConnectionStatusChange(bool isConnected) {
     setState(() {
       _isConnected = isConnected;
     });
-    
+
     if (widget.onConnectionStatusChanged != null) {
       widget.onConnectionStatusChanged!(isConnected);
     }
