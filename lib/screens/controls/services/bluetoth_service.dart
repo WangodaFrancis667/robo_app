@@ -213,13 +213,15 @@ class CrossPlatformBluetoothService {
             ).timeout(const Duration(seconds: 10)); // Increased timeout
 
             // Wait for connection to stabilize
-            await Future.delayed(const Duration(seconds: 1));            // Test the connection by checking if it's still active
+            await Future.delayed(
+              const Duration(seconds: 1),
+            ); // Test the connection by checking if it's still active
             if (connection.isConnected) {
               print('✅ Successfully connected to ${device.name}');
-              
+
               // Reduced stability test - some ESP32 devices are sensitive to immediate checks
               await Future.delayed(const Duration(milliseconds: 100));
-              
+
               // Don't re-test connection status as it might cause disconnection
               print('✅ Connection established and ready');
               return MobileBluetoothConnection(connection);
