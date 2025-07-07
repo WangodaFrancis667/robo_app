@@ -63,7 +63,7 @@ class PoseControlSection extends StatelessWidget {
                   icon: Icon(icon),
                   label: Text(pose),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: color.withOpacity(0.1),
+                    backgroundColor: color.withValues(alpha: 0.1),
                     foregroundColor: color,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
