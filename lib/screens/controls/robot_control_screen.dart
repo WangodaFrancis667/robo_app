@@ -24,18 +24,20 @@ enum ControlMode { driving, armControl }
 
 class RobotControllerApp extends StatelessWidget {
   final Function(bool)? onConnectionStatusChanged;
-  
+
   const RobotControllerApp({super.key, this.onConnectionStatusChanged});
 
   @override
   Widget build(BuildContext context) {
-    return RobotControllerScreen(onConnectionStatusChanged: onConnectionStatusChanged);
+    return RobotControllerScreen(
+      onConnectionStatusChanged: onConnectionStatusChanged,
+    );
   }
 }
 
 class RobotControllerScreen extends StatefulWidget {
   final Function(bool)? onConnectionStatusChanged;
-  
+
   const RobotControllerScreen({super.key, this.onConnectionStatusChanged});
 
   @override
@@ -45,7 +47,7 @@ class RobotControllerScreen extends StatefulWidget {
 class _RobotControllerScreenState extends State<RobotControllerScreen> {
   // Services
   late VideoService _videoService;
-  
+
   // Video initialization state
   bool _isVideoInitialized = false;
   bool _isVideoInitializing = false;
@@ -133,15 +135,15 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     if (_isVideoInitialized || _isVideoInitializing) {
       return; // Prevent multiple initializations
     }
-    
+
     setState(() {
       _isVideoInitializing = true;
     });
-    
+
     try {
       // Try auto-discovery first, then fallback to configured server
       await _videoService.initializeVideoFeedWithDiscovery();
-      
+
       setState(() {
         _isVideoInitialized = true;
         _isVideoInitializing = false;
@@ -255,12 +257,12 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         _isVideoInitialized = false;
         _isVideoInitializing = false;
       });
-      
+
       // Notify parent about connection status change
       if (widget.onConnectionStatusChanged != null) {
         widget.onConnectionStatusChanged!(false);
       }
-      
+
       _showSnackBar('Connection lost to robot');
       // Switch back to portrait mode when connection is lost
       OrientationService.switchToPortraitMode();
@@ -279,12 +281,12 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         _isVideoInitialized = false;
         _isVideoInitializing = false;
       });
-      
+
       // Notify parent about connection status change
       if (widget.onConnectionStatusChanged != null) {
         widget.onConnectionStatusChanged!(false);
       }
-      
+
       _showSnackBar('Disconnected');
       // Switch back to portrait mode when manually disconnecting
       OrientationService.switchToPortraitMode();
@@ -450,7 +452,9 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Connected to camera server at ${server.ip}:${server.port}'),
+        content: Text(
+          'Connected to camera server at ${server.ip}:${server.port}',
+        ),
         backgroundColor: Colors.green,
       ),
     );
@@ -512,7 +516,11 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.hourglass_empty, size: 48, color: Colors.white54),
+                      const Icon(
+                        Icons.hourglass_empty,
+                        size: 48,
+                        color: Colors.white54,
+                      ),
                       const SizedBox(height: 16),
                       const Text(
                         'Waiting for Bluetooth Connection',
@@ -551,36 +559,43 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: isConnected 
-          ? Row(
-              children: [
-                const Text('🤖 Robot Controller'),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade600,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.bluetooth_connected, color: Colors.white, size: 16),
-                      const SizedBox(width: 4),
-                      Text(
-                        selectedDevice?.name ?? 'Robot',
-                        style: const TextStyle(
+        title: isConnected
+            ? Row(
+                children: [
+                  const Text('🤖 Robot Controller'),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade600,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.bluetooth_connected,
                           color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          size: 16,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        Text(
+                          selectedDevice?.name ?? 'Robot',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            )
-          : const Text('🤖 Robot Controller'),
+                ],
+              )
+            : const Text('🤖 Robot Controller'),
         elevation: 0,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
@@ -637,10 +652,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
           : Row(
               children: [
                 // Left side - Video Feed
-                Expanded(
-                  flex: 1,
-                  child: _buildVideoFeedWidget(),
-                ),
+                Expanded(flex: 1, child: _buildVideoFeedWidget()),
 
                 // Right side - Controls
                 Expanded(
