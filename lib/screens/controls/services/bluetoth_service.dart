@@ -178,39 +178,58 @@ class CrossPlatformBluetoothService {
   ) async {
     if (isMobile && device is MobileBluetoothDevice) {
       try {
-        // Try to connect with retry logic
+        // Try to connect with enhanced retry logic
         mobile.BluetoothConnection? connection;
-        int retries = 3;
+        int retries = 5; // Increased retry attempts
+
+        // Close any existing connections to this device first
+        try {
+          await mobile.BluetoothConnection.toAddress(device._device.address)
+              .timeout(const Duration(seconds: 1))
+              .then((conn) => conn.close())
+              .catchError((_) {});
+        } catch (_) {
+          // Ignore errors when closing existing connections
+        }
 
         for (int i = 0; i < retries; i++) {
           try {
             print(
-              'Attempting connection to ${device.name} (attempt ${i + 1}/$retries)',
+              'Attempting connection to ${device.name} (${device.address}) - attempt ${i + 1}/$retries',
             );
 
-            // Add a small delay between attempts
+            // Progressive delay between attempts
             if (i > 0) {
-              await Future.delayed(Duration(seconds: 2));
+              int delay = i * 2; // 2, 4, 6, 8 seconds
+              print('Waiting ${delay}s before retry...');
+              await Future.delayed(Duration(seconds: delay));
             }
+
+            // Clear any existing connection state
+            await Future.delayed(const Duration(milliseconds: 500));
 
             connection = await mobile.BluetoothConnection.toAddress(
               device._device.address,
-            );
+            ).timeout(const Duration(seconds: 10)); // Increased timeout
 
-            // Wait a moment to ensure connection is stable
-            await Future.delayed(Duration(milliseconds: 500));
-
-            // Test the connection by checking if it's still active
+            // Wait for connection to stabilize
+            await Future.delayed(const Duration(seconds: 1));            // Test the connection by checking if it's still active
             if (connection.isConnected) {
-              print('Successfully connected to ${device.name}');
+              print('✅ Successfully connected to ${device.name}');
+              
+              // Reduced stability test - some ESP32 devices are sensitive to immediate checks
+              await Future.delayed(const Duration(milliseconds: 100));
+              
+              // Don't re-test connection status as it might cause disconnection
+              print('✅ Connection established and ready');
               return MobileBluetoothConnection(connection);
             } else {
-              print('Connection failed - not connected');
+              print('❌ Connection failed - not connected');
               await connection.close();
               connection = null;
             }
           } catch (e) {
-            print('Connection attempt ${i + 1} failed: $e');
+            print('❌ Connection attempt ${i + 1} failed: $e');
             if (connection != null) {
               try {
                 await connection.close();
