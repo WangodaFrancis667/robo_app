@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-enum ControlMode { driving, armControl }
+import '../robot_control_screen.dart' show ControlMode;
 
 class ControlModeSelectorSection extends StatelessWidget {
   final ControlMode currentControlMode;
