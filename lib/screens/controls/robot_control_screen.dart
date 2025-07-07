@@ -7,7 +7,6 @@ import 'services/bluetoth_service.dart';
 // Import all components
 import 'components/bluetooth_section.dart';
 import 'components/video_feed_section.dart';
-import 'components/connection_status_section.dart';
 import 'components/control_mode_selector.dart';
 import 'components/quick_actions_section.dart';
 import 'components/speed_control_section.dart';
@@ -24,24 +23,20 @@ import 'services/orientation_service.dart';
 enum ControlMode { driving, armControl }
 
 class RobotControllerApp extends StatelessWidget {
-  const RobotControllerApp({super.key});
+  final Function(bool)? onConnectionStatusChanged;
+  
+  const RobotControllerApp({super.key, this.onConnectionStatusChanged});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Robot Controller',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-        useMaterial3: true,
-      ),
-      home: const RobotControllerScreen(),
-    );
+    return RobotControllerScreen(onConnectionStatusChanged: onConnectionStatusChanged);
   }
 }
 
 class RobotControllerScreen extends StatefulWidget {
-  const RobotControllerScreen({super.key});
+  final Function(bool)? onConnectionStatusChanged;
+  
+  const RobotControllerScreen({super.key, this.onConnectionStatusChanged});
 
   @override
   State<RobotControllerScreen> createState() => _RobotControllerScreenState();
@@ -50,6 +45,10 @@ class RobotControllerScreen extends StatefulWidget {
 class _RobotControllerScreenState extends State<RobotControllerScreen> {
   // Services
   late VideoService _videoService;
+  
+  // Video initialization state
+  bool _isVideoInitialized = false;
+  bool _isVideoInitializing = false;
 
   // Bluetooth
   BluetoothConnection? connection;
@@ -84,7 +83,8 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     // Start in portrait mode for Bluetooth connection
     OrientationService.switchToPortraitMode();
     _initializeBluetooth();
-    _initializeVideoFeed();
+    // Don't initialize video feed until Bluetooth is connected
+    // _initializeVideoFeed();
   }
 
   @override
@@ -130,18 +130,37 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
   // Video feed methods
   Future<void> _initializeVideoFeed() async {
-    // Try auto-discovery first, then fallback to configured server
-    await _videoService.initializeVideoFeedWithDiscovery();
+    if (_isVideoInitialized || _isVideoInitializing) {
+      return; // Prevent multiple initializations
+    }
+    
     setState(() {
-      // Video state is now managed by the service
+      _isVideoInitializing = true;
     });
+    
+    try {
+      // Try auto-discovery first, then fallback to configured server
+      await _videoService.initializeVideoFeedWithDiscovery();
+      
+      setState(() {
+        _isVideoInitialized = true;
+        _isVideoInitializing = false;
+      });
+    } catch (e) {
+      print('Video initialization error: $e');
+      setState(() {
+        _isVideoInitializing = false;
+      });
+      // Don't set _isVideoInitialized = true on error
+    }
   }
 
   void _refreshVideoStream() {
-    _videoService.refreshVideoStream();
     setState(() {
-      // Video state is now managed by the service
+      _isVideoInitialized = false;
+      _isVideoInitializing = false;
     });
+    _videoService.refreshVideoStream();
     _initializeVideoFeed();
   }
 
@@ -167,6 +186,11 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         isConnecting = false;
       });
 
+      // Notify parent about connection status change
+      if (widget.onConnectionStatusChanged != null) {
+        widget.onConnectionStatusChanged!(true);
+      }
+
       _showSnackBar('Connected to ${device.name}');
 
       // Switch to landscape mode for robot control
@@ -182,6 +206,11 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
       // Start monitoring connection
       _startConnectionMonitoring();
+
+      // Initialize video feed AFTER Bluetooth connection is fully established
+      _showSnackBar('Initializing camera connection...');
+      await _initializeVideoFeed();
+      _showSnackBar('Camera connection initialized');
     } catch (e) {
       setState(() {
         isConnecting = false;
@@ -222,7 +251,16 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         isConnected = false;
         connection = null;
         selectedDevice = null;
+        // Reset video state when connection is lost
+        _isVideoInitialized = false;
+        _isVideoInitializing = false;
       });
+      
+      // Notify parent about connection status change
+      if (widget.onConnectionStatusChanged != null) {
+        widget.onConnectionStatusChanged!(false);
+      }
+      
       _showSnackBar('Connection lost to robot');
       // Switch back to portrait mode when connection is lost
       OrientationService.switchToPortraitMode();
@@ -237,7 +275,16 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         isConnected = false;
         connection = null;
         selectedDevice = null;
+        // Reset video state when disconnecting
+        _isVideoInitialized = false;
+        _isVideoInitializing = false;
       });
+      
+      // Notify parent about connection status change
+      if (widget.onConnectionStatusChanged != null) {
+        widget.onConnectionStatusChanged!(false);
+      }
+      
       _showSnackBar('Disconnected');
       // Switch back to portrait mode when manually disconnecting
       OrientationService.switchToPortraitMode();
@@ -409,20 +456,159 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     );
   }
 
+  Widget _buildVideoFeedWidget() {
+    if (!_isVideoInitialized && !_isVideoInitializing) {
+      // Show waiting state before video initialization
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          children: [
+            // Video header
+            Container(
+              padding: const EdgeInsets.all(8),
+              color: Colors.grey.shade900,
+              child: Row(
+                children: [
+                  const Icon(Icons.videocam, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Live Camera Feed',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'WAITING',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Waiting content
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.hourglass_empty, size: 48, color: Colors.white54),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Waiting for Bluetooth Connection',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Camera will initialize after robot connection',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Return the actual video feed section
+    return VideoFeedSection(
+      streamUrl: _videoService.streamUrl,
+      isLoadingStream: _videoService.isLoadingStream || _isVideoInitializing,
+      errorMessage: _videoService.errorMessage,
+      isStreamActive: _videoService.isStreamActive,
+      mjpegKey: _videoService.mjpegKey,
+      onRefreshVideoStream: _refreshVideoStream,
+      onCameraServerDiscovered: _onCameraServerDiscovered,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🤖 Robot Controller'),
+        title: isConnected 
+          ? Row(
+              children: [
+                const Text('🤖 Robot Controller'),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade600,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.bluetooth_connected, color: Colors.white, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        selectedDevice?.name ?? 'Robot',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          : const Text('🤖 Robot Controller'),
         elevation: 0,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          if (isConnected)
+          if (isConnected) ...[
+            // Show device address as a chip in the actions
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade300),
+              ),
+              child: Text(
+                selectedDevice?.address ?? 'Unknown',
+                style: TextStyle(
+                  color: Colors.green.shade700,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.settings),
               onPressed: _getStatus,
               tooltip: 'Get Status',
             ),
+          ],
           IconButton(
             icon: Icon(
               isConnected ? Icons.bluetooth_connected : Icons.bluetooth,
@@ -446,21 +632,14 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
               onRefreshDevices: _initializeBluetooth,
               onShowConnectionTips: _showConnectionTips,
               onConnectToDevice: _connectToDevice,
+              onCameraServerDiscovered: _onCameraServerDiscovered,
             )
           : Row(
               children: [
                 // Left side - Video Feed
                 Expanded(
                   flex: 1,
-                  child: VideoFeedSection(
-                    streamUrl: _videoService.streamUrl,
-                    isLoadingStream: _videoService.isLoadingStream,
-                    errorMessage: _videoService.errorMessage,
-                    isStreamActive: _videoService.isStreamActive,
-                    mjpegKey: _videoService.mjpegKey,
-                    onRefreshVideoStream: _refreshVideoStream,
-                    onCameraServerDiscovered: _onCameraServerDiscovered,
-                  ),
+                  child: _buildVideoFeedWidget(),
                 ),
 
                 // Right side - Controls
@@ -471,9 +650,6 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Connection status bar
-                        ConnectionStatusSection(selectedDevice: selectedDevice),
-
                         // Control mode selector
                         ControlModeSelectorSection(
                           currentControlMode: _currentControlMode,
