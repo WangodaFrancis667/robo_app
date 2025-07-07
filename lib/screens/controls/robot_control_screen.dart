@@ -130,7 +130,8 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
   // Video feed methods
   Future<void> _initializeVideoFeed() async {
-    await _videoService.initializeVideoFeed();
+    // Try auto-discovery first, then fallback to configured server
+    await _videoService.initializeVideoFeedWithDiscovery();
     setState(() {
       // Video state is now managed by the service
     });
@@ -391,6 +392,23 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     );
   }
 
+  void _onCameraServerDiscovered(CameraServer server) {
+    print('🎯 Camera server discovered: ${server.url}');
+
+    setState(() {
+      _videoService = _videoService.createFromDiscoveredServer(server);
+    });
+
+    _initializeVideoFeed();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Connected to camera server at ${server.ip}:${server.port}'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -441,6 +459,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
                     isStreamActive: _videoService.isStreamActive,
                     mjpegKey: _videoService.mjpegKey,
                     onRefreshVideoStream: _refreshVideoStream,
+                    onCameraServerDiscovered: _onCameraServerDiscovered,
                   ),
                 ),
 
