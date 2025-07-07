@@ -1,11 +1,24 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../../services/bluetoth_service.dart';
-import 'dart:convert';
-import 'package:flutter_mjpeg/flutter_mjpeg.dart';
-import 'package:http/http.dart' as http;
+import 'services/bluetoth_service.dart';
+
+// Import all components
+import 'components/bluetooth_section.dart';
+import 'components/video_feed_section.dart';
+import 'components/connection_status_section.dart';
+import 'components/control_mode_selector.dart';
+import 'components/quick_actions_section.dart';
+import 'components/speed_control_section.dart';
+import 'components/joystick_control_section.dart';
+import 'components/pose_control_section.dart';
+import 'components/servo_control_section.dart';
+
+// Import all services
+import 'services/video_service.dart';
+import 'services/robot_control_service.dart';
+import 'services/orientation_service.dart';
 
 // Control mode selection
 enum ControlMode { driving, armControl }
@@ -35,6 +48,9 @@ class RobotControllerScreen extends StatefulWidget {
 }
 
 class _RobotControllerScreenState extends State<RobotControllerScreen> {
+  // Services
+  late VideoService _videoService;
+
   // Bluetooth
   BluetoothConnection? connection;
   bool isConnecting = false;
@@ -44,15 +60,8 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
   // Robot control
   List<double> servoAngles = [90, 90, 90, 90, 90, 90];
-  List<String> servoNames = [
-    'Base (Waist)', // ID 0 - Pin 12
-    'Shoulder', // ID 1 - Pin 13
-    'Elbow', // ID 2 - Pin 18
-    'Wrist Pitch', // ID 3 - Pin 19
-    'Wrist Roll', // ID 4 - Pin 21
-    'Gripper', // ID 5 - Pin 22
-  ];
-  List<String> poses = ['Home', 'Pick', 'Place', 'Rest'];
+  List<String> servoNames = RobotControlService.defaultServoNames;
+  List<String> poses = RobotControlService.defaultPoses;
   int leftMotorSpeed = 0;
   int rightMotorSpeed = 0;
 
@@ -60,27 +69,22 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
   int globalSpeedMultiplier = 80; // Global speed control (20-100%)
   bool motorDiagnostics = true;
 
-  // Video feed properties
-  final String _raspberryPiIP = '192.168.1.8'; // Change this to your Pi's IP
-  String get streamUrl => 'http://$_raspberryPiIP:8080/my_mac_camera';
-  bool _isLoadingStream = false;
-  String _errorMessage = '';
-  bool _isStreamActive = false;
-  Key _mjpegKey = UniqueKey();
-
   // Control mode selection
   ControlMode _currentControlMode = ControlMode.driving;
+
+  // Timers
+  Timer? _servoTimer;
 
   @override
   void initState() {
     super.initState();
+    // Initialize services
+    _videoService = VideoService();
+
+    // Start in portrait mode for Bluetooth connection
+    OrientationService.switchToPortraitMode();
     _initializeBluetooth();
     _initializeVideoFeed();
-    // Force landscape orientation for better layout
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
   }
 
   @override
@@ -89,12 +93,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     _servoTimer?.cancel();
     connection?.close();
     // Restore all orientations when leaving the screen
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    OrientationService.restoreAllOrientations();
     super.dispose();
   }
 
@@ -131,56 +130,16 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
   // Video feed methods
   Future<void> _initializeVideoFeed() async {
+    await _videoService.initializeVideoFeed();
     setState(() {
-      _isLoadingStream = true;
-      _errorMessage = '';
+      // Video state is now managed by the service
     });
-
-    try {
-      bool serverRunning = await _testVideoConnectivity();
-
-      if (serverRunning) {
-        setState(() {
-          _isLoadingStream = false;
-          _isStreamActive = true;
-          _errorMessage = '';
-        });
-      } else {
-        setState(() {
-          _isLoadingStream = false;
-          _isStreamActive = false;
-          _errorMessage = 'Camera server not available';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _isLoadingStream = false;
-        _isStreamActive = false;
-        _errorMessage = 'Failed to initialize video feed: $e';
-      });
-    }
-  }
-
-  Future<bool> _testVideoConnectivity() async {
-    try {
-      final client = http.Client();
-      try {
-        final response = await client
-            .get(Uri.parse(streamUrl))
-            .timeout(const Duration(seconds: 5));
-        return response.statusCode == 200;
-      } finally {
-        client.close();
-      }
-    } catch (e) {
-      return false;
-    }
   }
 
   void _refreshVideoStream() {
+    _videoService.refreshVideoStream();
     setState(() {
-      _mjpegKey = UniqueKey();
-      _errorMessage = '';
+      // Video state is now managed by the service
     });
     _initializeVideoFeed();
   }
@@ -209,11 +168,16 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
       _showSnackBar('Connected to ${device.name}');
 
+      // Switch to landscape mode for robot control
+      OrientationService.switchToLandscapeMode();
+
       // Set initial configuration
       await Future.delayed(Duration(milliseconds: 500));
-      _sendCommand('G:$globalSpeedMultiplier');
+      _sendCommand(
+        RobotControlService.globalSpeedCommand(globalSpeedMultiplier),
+      );
       await Future.delayed(Duration(milliseconds: 100));
-      _sendCommand('D:${motorDiagnostics ? 1 : 0}');
+      _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
 
       // Start monitoring connection
       _startConnectionMonitoring();
@@ -226,6 +190,8 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
       });
       _showSnackBar('Connection failed: ${e.toString()}');
       print('Connection error: $e');
+      // Ensure we stay in portrait mode if connection fails
+      OrientationService.switchToPortraitMode();
     }
   }
 
@@ -257,6 +223,8 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         selectedDevice = null;
       });
       _showSnackBar('Connection lost to robot');
+      // Switch back to portrait mode when connection is lost
+      OrientationService.switchToPortraitMode();
     }
   }
 
@@ -270,6 +238,8 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         selectedDevice = null;
       });
       _showSnackBar('Disconnected');
+      // Switch back to portrait mode when manually disconnecting
+      OrientationService.switchToPortraitMode();
     }
   }
 
@@ -303,8 +273,6 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     );
   }
 
-  Timer? _servoTimer;
-
   void _updateServoAngle(int servoId, double angle) {
     setState(() {
       servoAngles[servoId] = angle;
@@ -313,35 +281,35 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     // Debounce servo commands to reduce spam
     _servoTimer?.cancel();
     _servoTimer = Timer(Duration(milliseconds: 100), () {
-      _sendCommand('S:$servoId,${angle.round()}');
+      _sendCommand(RobotControlService.servoCommand(servoId, angle.round()));
     });
   }
 
   void _setPose(String pose) {
-    _sendCommand('P:$pose');
+    _sendCommand(RobotControlService.poseCommand(pose));
   }
 
   void _updateGlobalSpeed(int speed) {
     setState(() {
       globalSpeedMultiplier = speed;
     });
-    _sendCommand('G:$speed');
+    _sendCommand(RobotControlService.globalSpeedCommand(speed));
   }
 
   void _toggleDiagnostics() {
     setState(() {
       motorDiagnostics = !motorDiagnostics;
     });
-    _sendCommand('D:${motorDiagnostics ? 1 : 0}');
+    _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
   }
 
   void _testMotors() {
-    _sendCommand('X');
+    _sendCommand(RobotControlService.motorTestCommand());
     _showSnackBar('Running motor test sequence...');
   }
 
   void _getStatus() {
-    _sendCommand('V');
+    _sendCommand(RobotControlService.statusCommand());
   }
 
   void _updateMotorSpeeds(int left, int right) {
@@ -349,11 +317,11 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
       leftMotorSpeed = left;
       rightMotorSpeed = right;
     });
-    _sendCommand('T:$left,$right');
+    _sendCommand(RobotControlService.tankDriveCommand(left, right));
   }
 
   void _homeRobot() {
-    _sendCommand('H');
+    _sendCommand(RobotControlService.homeCommand());
     setState(() {
       servoAngles = [90, 90, 90, 90, 90, 90];
       leftMotorSpeed = 0;
@@ -362,7 +330,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
   }
 
   void _emergencyStop() {
-    _sendCommand('E');
+    _sendCommand(RobotControlService.emergencyStopCommand());
     setState(() {
       leftMotorSpeed = 0;
       rightMotorSpeed = 0;
@@ -453,1060 +421,100 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         ],
       ),
       body: !isConnected
-          ? _buildBluetoothSection()
+          ? BluetoothConnectionSection(
+              bondedDevices: bondedDevices,
+              isConnecting: isConnecting,
+              selectedDevice: selectedDevice,
+              onRefreshDevices: _initializeBluetooth,
+              onShowConnectionTips: _showConnectionTips,
+              onConnectToDevice: _connectToDevice,
+            )
           : Row(
               children: [
                 // Left side - Video Feed
                 Expanded(
                   flex: 1,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Column(
-                      children: [
-                        // Video header
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          color: Colors.grey.shade900,
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.videocam,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Live Camera Feed',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _isStreamActive
-                                      ? Colors.green
-                                      : Colors.red,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  _isStreamActive ? 'LIVE' : 'OFFLINE',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Video content
-                        Expanded(child: _buildVideoWidget()),
-                      ],
-                    ),
+                  child: VideoFeedSection(
+                    streamUrl: _videoService.streamUrl,
+                    isLoadingStream: _videoService.isLoadingStream,
+                    errorMessage: _videoService.errorMessage,
+                    isStreamActive: _videoService.isStreamActive,
+                    mjpegKey: _videoService.mjpegKey,
+                    onRefreshVideoStream: _refreshVideoStream,
                   ),
                 ),
 
                 // Right side - Controls
                 Expanded(
                   flex: 1,
-                  child: Column(
-                    children: [
-                      // Connection status bar
-                      _buildConnectionStatus(),
+                  child: Container(
+                    constraints: const BoxConstraints.expand(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Connection status bar
+                        ConnectionStatusSection(selectedDevice: selectedDevice),
 
-                      // Control mode selector
-                      _buildControlModeSelector(),
-
-                      // Scrollable controls
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(8),
-                          child: Column(
-                            children: [
-                              _buildQuickActions(),
-                              const SizedBox(height: 12),
-                              if (_currentControlMode ==
-                                  ControlMode.driving) ...[
-                                _buildSpeedControl(),
-                                const SizedBox(height: 12),
-                                _buildJoystickControl(),
-                              ] else ...[
-                                _buildPoseControl(),
-                                const SizedBox(height: 12),
-                                _buildServoControl(),
-                              ],
-                            ],
-                          ),
+                        // Control mode selector
+                        ControlModeSelectorSection(
+                          currentControlMode: _currentControlMode,
+                          onControlModeChanged: _switchControlMode,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
 
-  Widget _buildVideoWidget() {
-    if (_isLoadingStream) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: Colors.white54),
-            SizedBox(height: 16),
-            Icon(Icons.videocam, size: 48, color: Colors.white54),
-            SizedBox(height: 16),
-            Text(
-              'Connecting to Camera...',
-              style: TextStyle(color: Colors.white, fontSize: 16),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_errorMessage.isNotEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.videocam_off, size: 48, color: Colors.white54),
-            const SizedBox(height: 16),
-            const Text(
-              'Camera Offline',
-              style: TextStyle(color: Colors.white, fontSize: 18),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _errorMessage,
-              style: const TextStyle(color: Colors.red, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _refreshVideoStream,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_isStreamActive) {
-      return Mjpeg(
-        key: _mjpegKey,
-        isLive: true,
-        stream: streamUrl,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.contain,
-        loading: (context) => const Center(
-          child: CircularProgressIndicator(color: Colors.white54),
-        ),
-        error: (context, error, stack) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error, size: 48, color: Colors.red),
-              const SizedBox(height: 8),
-              Text(
-                'Stream Error: $error',
-                style: const TextStyle(color: Colors.red),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.videocam_off, size: 48, color: Colors.white54),
-          SizedBox(height: 16),
-          Text(
-            'No Video Feed',
-            style: TextStyle(color: Colors.white, fontSize: 16),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBluetoothSection() {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        margin: const EdgeInsets.all(16),
-        constraints: const BoxConstraints(maxWidth: 500),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.blue.shade50, Colors.blue.shade100],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.blue.shade200),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.bluetooth, color: Colors.blue.shade700),
-                const SizedBox(width: 8),
-                Text(
-                  'Bluetooth Connection Required',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue.shade700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (bondedDevices.isEmpty)
-              const Text('No paired devices found')
-            else
-              ...bondedDevices
-                  .take(3)
-                  .map(
-                    // Limit to 3 devices for compact view
-                    (device) => Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.bluetooth, size: 20),
-                        title: Text(
-                          device.name.isNotEmpty
-                              ? device.name
-                              : 'Unknown Device',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        subtitle: Text(
-                          device.address,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        trailing:
-                            isConnecting &&
-                                selectedDevice?.address == device.address
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                        // Scrollable controls
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(8),
+                            physics: const BouncingScrollPhysics(),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                QuickActionsSection(
+                                  onHomeRobot: _homeRobot,
+                                  onEmergencyStop: _emergencyStop,
+                                  onTestMotors: _testMotors,
+                                  onToggleDiagnostics: _toggleDiagnostics,
+                                  motorDiagnostics: motorDiagnostics,
                                 ),
-                              )
-                            : const Icon(Icons.arrow_forward_ios, size: 16),
-                        onTap: () => _connectToDevice(device),
-                      ),
-                    ),
-                  ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _initializeBluetooth,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Refresh'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: _showConnectionTips,
-                  icon: const Icon(Icons.help_outline),
-                  label: const Text('Help'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade100,
-                    foregroundColor: Colors.orange.shade700,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildControlModeSelector() {
-    return Container(
-      margin: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade50, Colors.blue.shade100],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _switchControlMode(ControlMode.driving),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: _currentControlMode == ControlMode.driving
-                      ? LinearGradient(
-                          colors: [Colors.blue.shade600, Colors.blue.shade500],
-                        )
-                      : null,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    bottomLeft: Radius.circular(12),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.directions_car,
-                      color: _currentControlMode == ControlMode.driving
-                          ? Colors.white
-                          : Colors.blue.shade700,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Driving',
-                      style: TextStyle(
-                        color: _currentControlMode == ControlMode.driving
-                            ? Colors.white
-                            : Colors.blue.shade700,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _switchControlMode(ControlMode.armControl),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: _currentControlMode == ControlMode.armControl
-                      ? LinearGradient(
-                          colors: [
-                            Colors.green.shade600,
-                            Colors.green.shade500,
-                          ],
-                        )
-                      : null,
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(12),
-                    bottomRight: Radius.circular(12),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.precision_manufacturing,
-                      color: _currentControlMode == ControlMode.armControl
-                          ? Colors.white
-                          : Colors.blue.shade700,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Arm Control',
-                      style: TextStyle(
-                        color: _currentControlMode == ControlMode.armControl
-                            ? Colors.white
-                            : Colors.blue.shade700,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConnectionStatus() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      margin: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.green.shade50, Colors.green.shade100],
-        ),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.shade200),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.bluetooth_connected,
-            color: Colors.green.shade600,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  selectedDevice?.name ?? 'Robot',
-                  style: TextStyle(
-                    color: Colors.green.shade700,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  selectedDevice?.address ?? 'Unknown',
-                  style: TextStyle(color: Colors.green.shade600, fontSize: 10),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.green.shade600,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text(
-              'ONLINE',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '⚡ Quick Actions',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _homeRobot,
-                    icon: const Icon(Icons.home),
-                    label: const Text('Home'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _emergencyStop,
-                    icon: const Icon(Icons.emergency),
-                    label: const Text('E-Stop'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _testMotors,
-                    icon: const Icon(Icons.build),
-                    label: const Text('Test Motors'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _toggleDiagnostics,
-                    icon: Icon(
-                      motorDiagnostics
-                          ? Icons.bug_report
-                          : Icons.bug_report_outlined,
-                    ),
-                    label: Text(motorDiagnostics ? 'Diag: ON' : 'Diag: OFF'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: motorDiagnostics
-                          ? Colors.green
-                          : Colors.grey,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSpeedControl() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.speed, color: Colors.blue),
-                const SizedBox(width: 8),
-                const Text(
-                  'Global Speed Control',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Icon(Icons.remove, color: Colors.grey),
-                Expanded(
-                  child: Slider(
-                    value: globalSpeedMultiplier.toDouble(),
-                    min: 20,
-                    max: 100,
-                    divisions: 16,
-                    label: '$globalSpeedMultiplier%',
-                    onChanged: (value) => _updateGlobalSpeed(value.round()),
-                  ),
-                ),
-                const Icon(Icons.add, color: Colors.grey),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '20%\nSlow',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '$globalSpeedMultiplier%',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade700,
-                    ),
-                  ),
-                ),
-                Text(
-                  '100%\nFast',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildJoystickControl() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.control_camera, color: Colors.purple),
-                const SizedBox(width: 8),
-                const Text(
-                  'Movement Control',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Motor Speed Indicators
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.blue.shade50, Colors.blue.shade100],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(Icons.chevron_left, color: Colors.blue.shade700),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Left Motor',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$leftMotorSpeed%',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: leftMotorSpeed > 0
-                                ? Colors.green.shade600
-                                : leftMotorSpeed < 0
-                                ? Colors.red.shade600
-                                : Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.green.shade50, Colors.green.shade100],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.green.shade200),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(Icons.chevron_right, color: Colors.green.shade700),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Right Motor',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green.shade700,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$rightMotorSpeed%',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: rightMotorSpeed > 0
-                                ? Colors.green.shade600
-                                : rightMotorSpeed < 0
-                                ? Colors.red.shade600
-                                : Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // Directional Control Pad
-            Center(
-              child: Column(
-                children: [
-                  // Forward button
-                  _buildDirectionalButton(
-                    icon: Icons.keyboard_arrow_up,
-                    onPressed: () => _updateMotorSpeeds(60, 60),
-                    onReleased: () => _updateMotorSpeeds(0, 0),
-                    color: Colors.green,
-                    size: 60,
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Middle row with left, stop, right
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildDirectionalButton(
-                        icon: Icons.keyboard_arrow_left,
-                        onPressed: () => _updateMotorSpeeds(-60, 60),
-                        onReleased: () => _updateMotorSpeeds(0, 0),
-                        color: Colors.blue,
-                        size: 60,
-                      ),
-
-                      const SizedBox(width: 16),
-
-                      _buildDirectionalButton(
-                        icon: Icons.stop,
-                        onPressed: () => _updateMotorSpeeds(0, 0),
-                        onReleased: () {},
-                        color: Colors.red,
-                        size: 60,
-                      ),
-
-                      const SizedBox(width: 16),
-
-                      _buildDirectionalButton(
-                        icon: Icons.keyboard_arrow_right,
-                        onPressed: () => _updateMotorSpeeds(60, -60),
-                        onReleased: () => _updateMotorSpeeds(0, 0),
-                        color: Colors.purple,
-                        size: 60,
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Backward button
-                  _buildDirectionalButton(
-                    icon: Icons.keyboard_arrow_down,
-                    onPressed: () => _updateMotorSpeeds(-60, -60),
-                    onReleased: () => _updateMotorSpeeds(0, 0),
-                    color: Colors.orange,
-                    size: 60,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Speed Preset Buttons
-            const Text(
-              'Speed Presets',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildSpeedPresetButton(
-                    label: 'Slow',
-                    speed: 30,
-                    color: Colors.blue,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildSpeedPresetButton(
-                    label: 'Medium',
-                    speed: 60,
-                    color: Colors.green,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildSpeedPresetButton(
-                    label: 'Fast',
-                    speed: 90,
-                    color: Colors.orange,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDirectionalButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-    required VoidCallback onReleased,
-    required Color color,
-    required double size,
-  }) {
-    return GestureDetector(
-      onTapDown: (_) => onPressed(),
-      onTapUp: (_) => onReleased(),
-      onTapCancel: onReleased,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [color.withOpacity(0.2), color.withOpacity(0.1)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.2),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Icon(icon, color: color, size: size * 0.4),
-      ),
-    );
-  }
-
-  Widget _buildSpeedPresetButton({
-    required String label,
-    required int speed,
-    required Color color,
-  }) {
-    return ElevatedButton(
-      onPressed: () {
-        // This will be used for future directional movements with the selected speed
-        _showSnackBar('Speed preset set to $speed% - Use directional buttons');
-      },
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color.withOpacity(0.1),
-        foregroundColor: color,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: color.withOpacity(0.3)),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-          ),
-          Text(
-            '$speed%',
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPoseControl() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.accessibility_new, color: Colors.green),
-                const SizedBox(width: 8),
-                const Text(
-                  'Predefined Poses',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: poses.map((pose) {
-                IconData icon;
-                Color color;
-                switch (pose) {
-                  case 'Home':
-                    icon = Icons.home;
-                    color = Colors.blue;
-                    break;
-                  case 'Pick':
-                    icon = Icons.pan_tool;
-                    color = Colors.green;
-                    break;
-                  case 'Place':
-                    icon = Icons.place;
-                    color = Colors.orange;
-                    break;
-                  case 'Rest':
-                    icon = Icons.hotel;
-                    color = Colors.purple;
-                    break;
-                  default:
-                    icon = Icons.settings;
-                    color = Colors.grey;
-                }
-
-                return ElevatedButton.icon(
-                  onPressed: () => _setPose(pose),
-                  icon: Icon(icon),
-                  label: Text(pose),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: color.withOpacity(0.1),
-                    foregroundColor: color,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildServoControl() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.precision_manufacturing, color: Colors.indigo),
-                const SizedBox(width: 8),
-                const Text(
-                  'Servo Control',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ...List.generate(
-              6,
-              (index) => Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          servoNames[index],
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${servoAngles[index].round()}°',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade700,
+                                const SizedBox(height: 12),
+                                if (_currentControlMode ==
+                                    ControlMode.driving) ...[
+                                  SpeedControlSection(
+                                    globalSpeedMultiplier:
+                                        globalSpeedMultiplier,
+                                    onSpeedChanged: _updateGlobalSpeed,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  JoystickControlSection(
+                                    leftMotorSpeed: leftMotorSpeed,
+                                    rightMotorSpeed: rightMotorSpeed,
+                                    onMotorSpeedsChanged: _updateMotorSpeeds,
+                                    onShowMessage: _showSnackBar,
+                                  ),
+                                ] else ...[
+                                  PoseControlSection(
+                                    poses: poses,
+                                    onSetPose: _setPose,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ServoControlSection(
+                                    servoAngles: servoAngles,
+                                    servoNames: servoNames,
+                                    onServoAngleChanged: _updateServoAngle,
+                                  ),
+                                ],
+                                // Add some bottom padding to ensure scrolling works properly
+                                const SizedBox(height: 20),
+                              ],
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Text('0°', style: TextStyle(fontSize: 12)),
-                        Expanded(
-                          child: Slider(
-                            value: servoAngles[index],
-                            min: 0,
-                            max: 180,
-                            divisions: 36,
-                            onChanged: (value) =>
-                                _updateServoAngle(index, value),
-                          ),
-                        ),
-                        const Text('180°', style: TextStyle(fontSize: 12)),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
     );
   }
 }
