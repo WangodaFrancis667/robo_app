@@ -45,37 +45,47 @@ class MainDashboardState extends State<MainDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _screens[_currentIndex],
-      bottomNavigationBar: _hideBottomBar ? null : BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex,
-        onTap: _onTabChanged,
-        selectedItemColor: Colors.green,
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.videocam),
-            label: 'Live Feed',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.control_camera),
-            label: 'Controls',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.sensors), label: 'Sensors'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Logs'),
-        ],
-      ),
+      bottomNavigationBar: _hideBottomBar
+          ? null
+          : BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              currentIndex: _currentIndex,
+              onTap: _onTabChanged,
+              selectedItemColor: Colors.green,
+              unselectedItemColor: Colors.grey,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.videocam),
+                  label: 'Live Feed',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.control_camera),
+                  label: 'Controls',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.sensors),
+                  label: 'Sensors',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.history),
+                  label: 'Logs',
+                ),
+              ],
+            ),
       // Show a floating action button to go back when bottom bar is hidden
-      floatingActionButton: _hideBottomBar ? FloatingActionButton(
-        onPressed: () {
-          setState(() {
-            _currentIndex = 0; // Go back to Live Feed
-            _hideBottomBar = false;
-          });
-        },
-        backgroundColor: Colors.green,
-        tooltip: 'Back to Dashboard',
-        child: const Icon(Icons.home, color: Colors.white),
-      ) : null,
+      floatingActionButton: _hideBottomBar
+          ? FloatingActionButton(
+              onPressed: () {
+                setState(() {
+                  _currentIndex = 0; // Go back to Live Feed
+                  _hideBottomBar = false;
+                });
+              },
+              backgroundColor: Colors.green,
+              tooltip: 'Back to Dashboard',
+              child: const Icon(Icons.home, color: Colors.white),
+            )
+          : null,
     );
   }
 }
