@@ -6,23 +6,23 @@ class VideoService {
   static const String _defaultRaspberryPiIP = '192.168.1.8';
   static const int _defaultPort = 8080;
   static const String _defaultEndpoint = 'my_mac_camera';
-  
+
   final String raspberryPiIP;
   final int port;
   final String endpoint;
-  
+
   // Video state management
   bool _isLoadingStream = false;
   String _errorMessage = '';
   bool _isStreamActive = false;
   Key _mjpegKey = UniqueKey();
-  
+
   // Getters for state
   bool get isLoadingStream => _isLoadingStream;
   String get errorMessage => _errorMessage;
   bool get isStreamActive => _isStreamActive;
   Key get mjpegKey => _mjpegKey;
-  
+
   VideoService({
     this.raspberryPiIP = _defaultRaspberryPiIP,
     this.port = _defaultPort,
@@ -66,7 +66,7 @@ class VideoService {
   VideoState refreshVideoStream() {
     _mjpegKey = UniqueKey();
     _errorMessage = '';
-    // Return current state for immediate UI update, 
+    // Return current state for immediate UI update,
     // actual connectivity will be tested with initializeVideoFeed
     return VideoState(
       isLoading: false,
@@ -102,7 +102,8 @@ class VideoService {
         final response = await client
             .get(Uri.parse(baseUrl))
             .timeout(const Duration(seconds: 5));
-        return response.statusCode == 200 || response.statusCode == 404; // 404 might indicate server is running
+        return response.statusCode == 200 ||
+            response.statusCode == 404; // 404 might indicate server is running
       } finally {
         client.close();
       }
@@ -118,11 +119,7 @@ class VideoService {
     int port = _defaultPort,
     String endpoint = _defaultEndpoint,
   }) {
-    return VideoService(
-      raspberryPiIP: ip,
-      port: port,
-      endpoint: endpoint,
-    );
+    return VideoService(raspberryPiIP: ip, port: port, endpoint: endpoint);
   }
 }
 
