@@ -14,7 +14,7 @@ class LiveMonitoringScreen extends StatefulWidget {
 
 class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
   // Replace with your Raspberry Pi's IP address
-  final String _raspberryPiIP = '192.168.1.8'; // Change this to your Pi's IP
+  final String _raspberryPiIP = '192.168.137.4';//'192.168.1.8'; // Change this to your Pi's IP
 
   // Robot control URL (if your robot control is also on the Pi)
   String get controlUrl => 'http://$_raspberryPiIP:5000/control';

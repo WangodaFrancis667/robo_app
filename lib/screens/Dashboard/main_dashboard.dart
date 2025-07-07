@@ -13,40 +13,79 @@ class MainDashboard extends StatefulWidget {
 
 class MainDashboardState extends State<MainDashboard> {
   int _currentIndex = 0;
+  bool _hideBottomBar = false;
+  bool _isRobotConnected = false;
 
   final String baseUrl = 'http://192.168.1.100:5000';
 
-  final List<Widget> _screens = [
+  void _onRobotConnectionChanged(bool isConnected) {
+    setState(() {
+      _isRobotConnected = isConnected;
+      // Hide bottom bar when robot is connected in controls tab
+      _hideBottomBar = (_currentIndex == 1 && isConnected);
+    });
+  }
+
+  List<Widget> get _screens => [
     LiveMonitoringScreen(),
-    RobotControllerApp(),
-    // RobotControlScreen(),
+    RobotControllerApp(onConnectionStatusChanged: _onRobotConnectionChanged),
     SensorDashboardScreen(),
     WeedingLogsScreen(),
   ];
+
+  void _onTabChanged(int index) {
+    setState(() {
+      _currentIndex = index;
+      // Hide bottom bar when on controls tab (index 1) and robot is connected
+      _hideBottomBar = (index == 1 && _isRobotConnected);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: _screens[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        selectedItemColor: Colors.green,
-        unselectedItemColor: Colors.grey,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.videocam),
-            label: 'Live Feed',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.control_camera),
-            label: 'Controls',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.sensors), label: 'Sensors'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Logs'),
-        ],
-      ),
+      bottomNavigationBar: _hideBottomBar
+          ? null
+          : BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              currentIndex: _currentIndex,
+              onTap: _onTabChanged,
+              selectedItemColor: Colors.green,
+              unselectedItemColor: Colors.grey,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.videocam),
+                  label: 'Live Feed',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.control_camera),
+                  label: 'Controls',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.sensors),
+                  label: 'Sensors',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.history),
+                  label: 'Logs',
+                ),
+              ],
+            ),
+      // Show a floating action button to go back when bottom bar is hidden
+      floatingActionButton: _hideBottomBar
+          ? FloatingActionButton(
+              onPressed: () {
+                setState(() {
+                  _currentIndex = 0; // Go back to Live Feed
+                  _hideBottomBar = false;
+                });
+              },
+              backgroundColor: Colors.green,
+              tooltip: 'Back to Dashboard',
+              child: const Icon(Icons.home, color: Colors.white),
+            )
+          : null,
     );
   }
 }

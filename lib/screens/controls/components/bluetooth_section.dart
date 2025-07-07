@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/bluetoth_service.dart';
+import '../services/video_service.dart';
+import 'camera_discovery_dialog.dart';
 
 class BluetoothConnectionSection extends StatelessWidget {
   final List<BluetoothDevice> bondedDevices;
@@ -8,6 +10,7 @@ class BluetoothConnectionSection extends StatelessWidget {
   final VoidCallback onRefreshDevices;
   final VoidCallback onShowConnectionTips;
   final Function(BluetoothDevice) onConnectToDevice;
+  final Function(CameraServer)? onCameraServerDiscovered;
 
   const BluetoothConnectionSection({
     super.key,
@@ -17,6 +20,7 @@ class BluetoothConnectionSection extends StatelessWidget {
     required this.onRefreshDevices,
     required this.onShowConnectionTips,
     required this.onConnectToDevice,
+    this.onCameraServerDiscovered,
   });
 
   @override
@@ -234,6 +238,42 @@ class BluetoothConnectionSection extends StatelessWidget {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange.shade100,
                               foregroundColor: Colors.orange.shade700,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              // Show camera discovery dialog
+                              final server = await showDialog<CameraServer?>(
+                                context: context,
+                                builder: (context) => CameraDiscoveryDialog(
+                                  onServerSelected: () {
+                                    // Dialog will handle the selection
+                                  },
+                                  onServerConfigured: (server) {
+                                    Navigator.of(context).pop(server);
+                                  },
+                                ),
+                              );
+
+                              // If a server was selected, execute the callback
+                              if (server != null &&
+                                  onCameraServerDiscovered != null) {
+                                onCameraServerDiscovered!(server);
+                              }
+                            },
+                            icon: const Icon(Icons.camera_alt),
+                            label: const Text('Discover Cameras'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade600,
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
