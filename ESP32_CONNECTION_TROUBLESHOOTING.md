@@ -3,6 +3,7 @@
 ## Issue: ESP32 Robot Connection Not Opening Control Window
 
 ### Problem Description
+
 - Bluetooth connection establishes briefly but then disconnects immediately
 - Control window does not appear after connection
 - Log shows connection being established and then closed rapidly
@@ -26,6 +27,7 @@
 ### Fixes Applied
 
 #### 1. **Reduced Connection Stability Testing**
+
 ```dart
 // BEFORE: Aggressive stability test
 await Future.delayed(const Duration(milliseconds: 500));
@@ -40,6 +42,7 @@ return MobileBluetoothConnection(connection);
 ```
 
 #### 2. **Delayed Video Feed Initialization**
+
 ```dart
 // BEFORE: Video feed initialized on app startup
 _initializeVideoFeed();
@@ -49,6 +52,7 @@ _initializeVideoFeedInBackground();
 ```
 
 #### 3. **Longer Initial Command Delay**
+
 ```dart
 // BEFORE: Quick command sending
 await Future.delayed(const Duration(milliseconds: 300));
@@ -58,6 +62,7 @@ await Future.delayed(const Duration(milliseconds: 1000));
 ```
 
 #### 4. **Less Aggressive Connection Monitoring**
+
 ```dart
 // BEFORE: Frequent ping commands
 Timer.periodic(Duration(seconds: 5), (timer) {
@@ -74,20 +79,20 @@ Timer(const Duration(seconds: 10), () {
 
 ### Expected Behavior After Fixes
 
-1. **Connection Establishment**: 
+1. **Connection Establishment**:
    - ESP32 connects without immediate disconnection
    - Connection stability test is minimal and non-intrusive
 
-2. **UI Transition**: 
+2. **UI Transition**:
    - Control window appears immediately after connection
    - Landscape mode is activated
    - Robot controls become available
 
-3. **Command Communication**: 
+3. **Command Communication**:
    - Initial configuration commands are sent after appropriate delay
    - ESP32 has time to be ready for commands
 
-4. **Video Feed**: 
+4. **Video Feed**:
    - Camera discovery happens in background
    - Video feed doesn't interfere with Bluetooth connection
 
@@ -110,7 +115,7 @@ Timer(const Duration(seconds: 10), () {
 
 ### Additional Troubleshooting
 
-#### If Connection Still Fails:
+#### If Connection Still Fails
 
 1. **Check ESP32 Code**:
    - Ensure ESP32 is properly listening for Bluetooth connections
@@ -124,7 +129,7 @@ Timer(const Duration(seconds: 10), () {
    - Ensure all Bluetooth permissions are granted
    - Check Location permission (required for Bluetooth on Android)
 
-#### If Control Window Doesn't Appear:
+#### If Control Window Doesn't Appear
 
 1. **Check Logs**:
    - Look for "✅ UI updated to show connected state" message
@@ -134,7 +139,7 @@ Timer(const Duration(seconds: 10), () {
    - Force close the app completely
    - Restart and try connecting again
 
-#### If Commands Don't Work:
+#### If Commands Don't Work
 
 1. **Check ESP32 Serial Output**:
    - ESP32 should show received commands
