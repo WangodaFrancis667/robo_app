@@ -32,6 +32,11 @@ dependencies:
     sdk: flutter
   http: ^0.13.6
   flutter_mjpeg: ^2.0.2 # Add this line
+  flutter_vlc_player: ^7.1.0 # RTSP / HLS / UDP, etc. :contentReference[oaicite:0]{index=0}
+  flutter_bluetooth_serial: ^0.4.0
+  flutter_joystick: ^0.2.2
+  permission_handler: ^11.3.1
+  bluetooth_low_energy: ^6.0.2
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
