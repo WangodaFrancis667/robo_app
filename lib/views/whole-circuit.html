@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>Servo Power Circuit Diagram</title>
+ <style>
+  body {
+   font-family: Arial, sans-serif;
+   margin: 20px;
+   background-color: #f5f5f5;
+  }
+
+  .container {
+   max-width: 1200px;
+   margin: 0 auto;
+   background: white;
+   padding: 20px;
+   border-radius: 10px;
+   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  }
+
+  .circuit-diagram {
+   background: #fff;
+   border: 2px solid #333;
+   border-radius: 10px;
+   padding: 20px;
+   margin: 20px 0;
+   position: relative;
+   min-height: 600px;
+  }
+
+  .component {
+   position: absolute;
+   border: 2px solid;
+   border-radius: 5px;
+   padding: 8px;
+   font-weight: bold;
+   text-align: center;
+   background: white;
+  }
+
+  .power-supply {
+   border-color: #ff6b6b;
+   background: #ffe6e6;
+   top: 50px;
+   left: 50px;
+   width: 100px;
+   height: 80px;
+  }
+
+  .capacitor-bank {
+   border-color: #4ecdc4;
+   background: #e6fffe;
+   top: 50px;
+   left: 220px;
+   width: 120px;
+   height: 80px;
+  }
+
+  .switch {
+   border-color: #45b7d1;
+   background: #e6f3ff;
+   top: 200px;
+   left: 120px;
+   width: 80px;
+   height: 40px;
+  }
+
+  .mosfet {
+   border-color: #96ceb4;
+   background: #f0fff0;
+   top: 300px;
+   left: 250px;
+   width: 100px;
+   height: 80px;
+  }
+
+  .esp32 {
+   border-color: #feca57;
+   background: #fffde6;
+   top: 250px;
+   left: 50px;
+   width: 80px;
+   height: 60px;
+  }
+
+  .servo-block {
+   border-color: #ff9ff3;
+   background: #fff0fe;
+   top: 450px;
+   left: 200px;
+   width: 300px;
+   height: 100px;
+  }
+
+  .wire {
+   stroke: #333;
+   stroke-width: 3;
+   fill: none;
+  }
+
+  .wire-power {
+   stroke: #ff0000;
+   stroke-width: 4;
+  }
+
+  .wire-ground {
+   stroke: #000000;
+   stroke-width: 3;
+  }
+
+  .wire-signal {
+   stroke: #0066cc;
+   stroke-width: 2;
+  }
+
+  .label {
+   font-size: 12px;
+   font-weight: bold;
+   fill: #333;
+  }
+
+  .voltage-label {
+   color: #ff0000;
+   font-weight: bold;
+  }
+
+  .parts-list {
+   background: #f8f9fa;
+   border: 1px solid #dee2e6;
+   border-radius: 5px;
+   padding: 15px;
+   margin: 20px 0;
+  }
+
+  .warning {
+   background: #fff3cd;
+   border: 1px solid #ffeaa7;
+   color: #856404;
+   padding: 15px;
+   border-radius: 5px;
+   margin: 20px 0;
+  }
+
+  .step {
+   background: #e7f3ff;
+   border-left: 4px solid #2196F3;
+   padding: 15px;
+   margin: 10px 0;
+  }
+ </style>
+</head>
+
+<body>
+ <div class="container">
+  <h1>🔌 Servo Power Circuit with Noise Filtering</h1>
+
+  <div class="warning">
+   ⚠️ <strong>Important:</strong> This circuit provides clean, filtered power to your 6 MG996R servos, eliminating
+   shaking and noise. The SW-520D vibration sensors can monitor servo operation.
+  </div>
+
+  <div class="circuit-diagram">
+   <svg width="100%" height="600" style="position: absolute; top: 0; left: 0;">
+    <!-- Power Supply to Capacitor Bank -->
+    <line x1="150" y1="90" x2="220" y2="90" class="wire wire-power" />
+    <text x="175" y="85" class="label voltage-label">6V</text>
+
+    <!-- Capacitor Bank to Switch -->
+    <line x1="280" y1="130" x2="280" y2="180" class="wire wire-power" />
+    <line x1="280" y1="180" x2="160" y2="180" class="wire wire-power" />
+    <line x1="160" y1="180" x2="160" y2="200" class="wire wire-power" />
+
+    <!-- Switch to MOSFET -->
+    <line x1="160" y1="240" x2="160" y2="260" class="wire wire-power" />
+    <line x1="160" y1="260" x2="250" y2="260" class="wire wire-power" />
+    <line x1="250" y1="260" x2="250" y2="300" class="wire wire-power" />
+
+    <!-- ESP32 to MOSFET Gate -->
+    <line x1="130" y1="280" x2="200" y2="280" class="wire wire-signal" />
+    <line x1="200" y1="280" x2="200" y2="320" class="wire wire-signal" />
+    <line x1="200" y1="320" x2="250" y2="320" class="wire wire-signal" />
+    <text x="150" y="275" class="label">Pin 16</text>
+
+    <!-- MOSFET to Servos -->
+    <line x1="300" y1="380" x2="300" y2="420" class="wire wire-power" />
+    <line x1="300" y1="420" x2="350" y2="420" class="wire wire-power" />
+    <line x1="350" y1="420" x2="350" y2="450" class="wire wire-power" />
+
+    <!-- Ground connections -->
+    <line x1="100" y1="130" x2="100" y2="580" class="wire wire-ground" />
+    <line x1="100" y1="580" x2="500" y2="580" class="wire wire-ground" />
+    <line x1="270" y1="130" x2="270" y2="580" class="wire wire-ground" />
+    <line x1="90" y1="310" x2="100" y2="310" class="wire wire-ground" />
+    <line x1="280" y1="380" x2="280" y2="580" class="wire wire-ground" />
+    <line x1="300" y1="550" x2="300" y2="580" class="wire wire-ground" />
+
+    <!-- Labels -->
+    <text x="50" y="595" class="label">GND Bus</text>
+    <text x="320" y="440" class="label voltage-label">Filtered 6V to Servos</text>
+   </svg>
+
+   <div class="component power-supply">
+    <div>6V 10A+</div>
+    <div>Power Supply</div>
+    <div style="font-size: 10px;">+ -</div>
+   </div>
+
+   <div class="component capacitor-bank">
+    <div>Capacitor</div>
+    <div>Filter Bank</div>
+    <div style="font-size: 10px;">5×100µF/50V</div>
+    <div style="font-size: 10px;">+ Parallel</div>
+   </div>
+
+   <div class="component switch">
+    <div>SW-520D</div>
+    <div>Switch</div>
+    <div style="font-size: 10px;">Manual</div>
+   </div>
+
+   <div class="component esp32">
+    <div>ESP32</div>
+    <div>Pin 16</div>
+    <div style="font-size: 10px;">Control</div>
+   </div>
+
+   <div class="component mosfet">
+    <div>IRF540N</div>
+    <div>MOSFET</div>
+    <div style="font-size: 10px;">Power Gate</div>
+   </div>
+
+   <div class="component servo-block">
+    <div>6× MG996R Servos</div>
+    <div style="font-size: 12px;">RED: Filtered Power</div>
+    <div style="font-size: 12px;">BLACK: Ground</div>
+    <div style="font-size: 12px;">YELLOW: ESP32 Pins 12,13,18,19,21,22</div>
+   </div>
+  </div>
+
+  <h2>📋 Required Components</h2>
+  <div class="parts-list">
+   <h3>What You Have:</h3>
+   <ul>
+    <li>✅ 5× 100µF 50V capacitors (for main filtering)</li>
+    <li>✅ 5× 100µF 25V capacitors (for individual servo filtering)</li>
+    <li>✅ 4× SW-520D vibration sensors (can be used as manual switches)</li>
+   </ul>
+
+   <h3>Additional Components Needed:</h3>
+   <ul>
+    <li>🔌 <strong>6V 10A+ Power Supply</strong> (switching type recommended)</li>
+    <li>🔧 <strong>IRF540N N-Channel MOSFET</strong> (or similar, rated 100V/33A)</li>
+    <li>⚡ <strong>10kΩ Resistor</strong> (for MOSFET gate)</li>
+    <li>📱 <strong>Perfboard or Breadboard</strong> (for building the circuit)</li>
+    <li>🔧 <strong>Terminal blocks or connectors</strong> (for easy connections)</li>
+    <li>📏 <strong>16 AWG wire</strong> (for power connections)</li>
+    <li>📏 <strong>22 AWG wire</strong> (for signal connections)</li>
+   </ul>
+  </div>
+
+  <h2>🔧 Step-by-Step Wiring Instructions</h2>
+
+  <div class="step">
+   <h3>Step 1: Create the Capacitor Filter Bank</h3>
+   <p>Connect all 5× 100µF 50V capacitors in <strong>parallel</strong>:</p>
+   <ul>
+    <li>Connect all positive (+) terminals together → This becomes your +6V filtered rail</li>
+    <li>Connect all negative (-) terminals together → This becomes your GND rail</li>
+    <li><strong>Result:</strong> 500µF total capacitance for excellent filtering</li>
+   </ul>
+  </div>
+
+  <div class="step">
+   <h3>Step 2: Power Supply Connections</h3>
+   <ul>
+    <li><strong>6V+ from power supply</strong> → Positive terminal of capacitor bank</li>
+    <li><strong>GND from power supply</strong> → Negative terminal of capacitor bank</li>
+    <li><strong>ESP32 VIN</strong> → 6V+ rail (for ESP32 power)</li>
+    <li><strong>ESP32 GND</strong> → GND rail</li>
+   </ul>
+  </div>
+
+  <div class="step">
+   <h3>Step 3: MOSFET Power Gate Setup</h3>
+   <ul>
+    <li><strong>MOSFET Drain (D)</strong> → +6V filtered rail from capacitor bank</li>
+    <li><strong>MOSFET Source (S)</strong> → Servo power rail (goes to all servo RED wires)</li>
+    <li><strong>MOSFET Gate (G)</strong> → 10kΩ resistor → ESP32 Pin 16</li>
+    <li><strong>MOSFET Source (S)</strong> → Also connect to GND rail</li>
+   </ul>
+  </div>
+
+  <div class="step">
+   <h3>Step 4: Individual Servo Filtering</h3>
+   <p>For each servo, add a 100µF 25V capacitor:</p>
+   <ul>
+    <li><strong>Capacitor (+)</strong> → Servo RED wire</li>
+    <li><strong>Capacitor (-)</strong> → Servo BLACK wire</li>
+    <li>Place these capacitors close to each servo</li>
+   </ul>
+  </div>
+
+  <div class="step">
+   <h3>Step 5: Servo Connections</h3>
+   <ul>
+    <li><strong>All Servo RED wires</strong> → MOSFET Source (filtered power)</li>
+    <li><strong>All Servo BLACK wires</strong> → GND rail</li>
+    <li><strong>Servo YELLOW wires</strong> → ESP32 pins 12,13,18,19,21,22 respectively</li>
+   </ul>
+  </div>
+
+  <div class="step">
+   <h3>Step 6: SW-520D Integration (Optional)</h3>
+   <p>Use SW-520D sensors for vibration monitoring or manual control:</p>
+   <ul>
+    <li><strong>Option A:</strong> Manual power switch in series with +6V rail</li>
+    <li><strong>Option B:</strong> Connect to ESP32 digital pins for vibration detection</li>
+    <li><strong>Option C:</strong> Emergency stop switches for safety</li>
+   </ul>
+  </div>
+
+  <h2>⚡ Circuit Benefits</h2>
+  <div class="parts-list">
+   <ul>
+    <li>🔋 <strong>500µF total filtering</strong> eliminates voltage ripple and noise</li>
+    <li>🔇 <strong>Individual servo capacitors</strong> reduce high-frequency noise</li>
+    <li>⚡ <strong>MOSFET power gating</strong> saves power and reduces heating</li>
+    <li>🛡️ <strong>Isolated servo power</strong> prevents interference with ESP32</li>
+    <li>📊 <strong>SW-520D sensors</strong> can monitor system vibration</li>
+    <li>🔧 <strong>Modular design</strong> allows easy troubleshooting</li>
+   </ul>
+  </div>
+
+  <div class="warning">
+   ⚠️ <strong>Safety Notes:</strong><br>
+   • Double-check all connections before powering on<br>
+   • Use thick wires (16 AWG) for power connections<br>
+   • Mount MOSFET on a heatsink if it gets warm<br>
+   • Add fuses: 15A on main power, 2A per servo group<br>
+   • Keep capacitors away from heat sources
+  </div>
+
+  <h2>🧪 Testing Procedure</h2>
+  <div class="step">
+   <ol>
+    <li><strong>Visual inspection:</strong> Check all connections</li>
+    <li><strong>Multimeter test:</strong> Verify 6V at capacitor bank</li>
+    <li><strong>MOSFET test:</strong> ESP32 Pin 16 HIGH should give 6V at servo rail</li>
+    <li><strong>Individual servo test:</strong> Connect one servo, test movement</li>
+    <li><strong>Full system test:</strong> Connect all servos, test poses</li>
+   </ol>
+  </div>
+ </div>
+</body>
+
+</html>
