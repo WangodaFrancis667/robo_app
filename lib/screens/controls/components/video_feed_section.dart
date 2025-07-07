@@ -34,11 +34,7 @@ class VideoFeedSection extends StatelessWidget {
             color: Colors.grey.shade900,
             child: Row(
               children: [
-                const Icon(
-                  Icons.videocam,
-                  color: Colors.white,
-                  size: 20,
-                ),
+                const Icon(Icons.videocam, color: Colors.white, size: 20),
                 const SizedBox(width: 8),
                 const Text(
                   'Live Camera Feed',
