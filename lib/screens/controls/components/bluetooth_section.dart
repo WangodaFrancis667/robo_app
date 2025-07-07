@@ -70,7 +70,7 @@ class BluetoothConnectionSection extends StatelessWidget {
                   border: Border.all(color: Colors.blue.shade200),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.blue.shade200.withOpacity(0.3),
+                      color: Colors.blue.shade200.withValues(alpha: 0.3),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -180,7 +180,8 @@ class BluetoothConnectionSection extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              trailing: isConnecting &&
+                              trailing:
+                                  isConnecting &&
                                       selectedDevice?.address == device.address
                                   ? const SizedBox(
                                       width: 24,
