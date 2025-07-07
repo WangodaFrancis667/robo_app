@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:robo_app/screens/live_feed/live_monitoring_screen.dart';
 import 'package:robo_app/screens/controls/robot_control_screen.dart';
+import 'package:robo_app/screens/live_feed/live_monitoring_screen.dart';
 import 'package:robo_app/screens/sensors/sensor_dashboard_screen.dart';
 import 'package:robo_app/screens/logs/weeding_logs_screen.dart';
 
@@ -18,7 +18,8 @@ class MainDashboardState extends State<MainDashboard> {
 
   final List<Widget> _screens = [
     LiveMonitoringScreen(),
-    RobotControlScreen(),
+    RobotControllerApp(),
+    // RobotControlScreen(),
     SensorDashboardScreen(),
     WeedingLogsScreen(),
   ];
