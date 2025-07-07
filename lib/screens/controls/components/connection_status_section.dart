@@ -4,10 +4,7 @@ import '../services/bluetoth_service.dart';
 class ConnectionStatusSection extends StatelessWidget {
   final BluetoothDevice? selectedDevice;
 
-  const ConnectionStatusSection({
-    super.key,
-    required this.selectedDevice,
-  });
+  const ConnectionStatusSection({super.key, required this.selectedDevice});
 
   @override
   Widget build(BuildContext context) {
