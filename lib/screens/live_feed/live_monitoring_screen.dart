@@ -590,7 +590,9 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
   Future<bool> _testConnectivity(String url) async {
     try {
       debugPrint('Testing basic connectivity to: $url');
-      final response = await http.get(Uri.parse(url)).timeout(Duration(seconds: 5));
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(Duration(seconds: 5));
       debugPrint('Test response status: ${response.statusCode}');
       return response.statusCode == 200;
     } catch (e) {
