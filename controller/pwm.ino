@@ -9,6 +9,7 @@
  *  - Fixed speed control logic
  *  - Enhanced safety features
  *  - Improved diagnostics
+ *  - Updated for latest ESP32 Arduino Core
  *********************************************************************/
 
 #if !defined(ESP32)
@@ -22,27 +23,25 @@
 
 /* -------- ZK-5AD Motor Driver Pinout Mapping -------- */
 // LEFT ZK-5AD Motor Driver (controls 2 left-side motors)
-constexpr uint8_t PWM_FREQUENCY = 1000;  //Front Left PWM-enabled  
-constexpr uint8_t PWM_RESOLUTION = 8;  //Front Left PWM-enabled  
+constexpr uint8_t PWM_FREQUENCY = 1000; // Front Left PWM-enabled
+constexpr uint8_t PWM_RESOLUTION = 8;   // Front Left PWM-enabled
 
-constexpr uint8_t FL_PWM_PIN = 32;  //Front Left PWM-enabled  
-constexpr uint8_t FL_DIR_PIN = 15;  //Front Left Direction pin
-constexpr uint8_t FL_PWM_CHANNEL = 0; //Front Left PWM CHANNEL
+constexpr uint8_t FL_PWM_PIN = 32;    // Front Left PWM-enabled
+constexpr uint8_t FL_DIR_PIN = 15;    // Front Left Direction pin
+constexpr uint8_t FL_PWM_CHANNEL = 0; // Front Left PWM CHANNEL
 
-constexpr uint8_t RL_PWM_PIN = 25;  //Rear Left PWM-enabled  
-constexpr uint8_t RL_DIR_PIN = 26;  //Rear Left Direction pin
-constexpr uint8_t RL_PWM_CHANNEL = 1; //Rear Left PWM CHANNEL
+constexpr uint8_t RL_PWM_PIN = 25;    // Rear Left PWM-enabled
+constexpr uint8_t RL_DIR_PIN = 26;    // Rear Left Direction pin
+constexpr uint8_t RL_PWM_CHANNEL = 1; // Rear Left PWM CHANNEL
 
 // RIGHT ZK-5AD Motor Driver (controls 2 right-side motors)
-constexpr uint8_t FR_PWM_PIN = 33;  //Front Right PWM-enabled  
-constexpr uint8_t FR_DIR_PIN = 4;  //Front Right Direction pin
-constexpr uint8_t FR_PWM_CHANNEL = 2; //Front Right PWM CHANNEL
+constexpr uint8_t FR_PWM_PIN = 33;    // Front Right PWM-enabled
+constexpr uint8_t FR_DIR_PIN = 4;     // Front Right Direction pin
+constexpr uint8_t FR_PWM_CHANNEL = 2; // Front Right PWM CHANNEL
 
-constexpr uint8_t RR_PWM_PIN = 27;  //Rear Right PWM-enabled  
-constexpr uint8_t RR_DIR_PIN = 14;  //Rear Right Direction pin
-constexpr uint8_t RR_PWM_CHANNEL = 3; //Rear Right PWM CHANNEL
-
-
+constexpr uint8_t RR_PWM_PIN = 27;    // Rear Right PWM-enabled
+constexpr uint8_t RR_DIR_PIN = 14;    // Rear Right Direction pin
+constexpr uint8_t RR_PWM_CHANNEL = 3; // Rear Right PWM CHANNEL
 
 /* -------- MG996R Servo Configuration -------- */
 const uint8_t SERVO_PINS[6] = {12, 13, 18, 19, 21, 22};
@@ -91,8 +90,8 @@ constexpr char BT_NAME[] = "ESP32_Robot";
 
 /* -------- FIXED ZK-5AD Motor Driver Control -------- */
 
-
-void setMotorSpeed(uint8_t pwmPin, uint8_t dirPin, uint8_t pwmChannel, int speed) {
+void setMotorSpeed(uint8_t pwmPin, uint8_t dirPin, uint8_t pwmChannel,
+                   int speed) {
   // Clamp speed to -100 to 100
   speed = constrain(speed, -100, 100);
 
@@ -110,9 +109,9 @@ void setMotorSpeed(uint8_t pwmPin, uint8_t dirPin, uint8_t pwmChannel, int speed
 
   // Direction control
   if (adjustedSpeed > 0) {
-    digitalWrite(dirPin, HIGH);  // Forward
+    digitalWrite(dirPin, HIGH); // Forward
   } else if (adjustedSpeed < 0) {
-    digitalWrite(dirPin, LOW);   // Reverse
+    digitalWrite(dirPin, LOW); // Reverse
   }
 
   // Write PWM to control speed
@@ -124,31 +123,30 @@ void setMotorSpeed(uint8_t pwmPin, uint8_t dirPin, uint8_t pwmChannel, int speed
   }
 }
 
-
 /* -------- Individual Motor Control Functions -------- */
 void motorFrontLeft(int speed) {
-  setMotorSpeed(FL_PWM_PIN, FL_DIR_PIN, speed);
+  setMotorSpeed(FL_PWM_PIN, FL_DIR_PIN, 0, speed);
   if (motorDiagnostics && speed != 0) {
     Serial.printf("🔄 FL: %d%%\n", speed);
   }
 }
 
 void motorRearLeft(int speed) {
-  setMotorSpeed(RL_PWM_PIN, RL_DIR_PIN, speed);
+  setMotorSpeed(RL_PWM_PIN, RL_DIR_PIN, 1, speed);
   if (motorDiagnostics && speed != 0) {
     Serial.printf("🔄 RL: %d%%\n", speed);
   }
 }
 
 void motorFrontRight(int speed) {
-  setMotorSpeed(FR_PWM_PIN, FR_DIR_PIN,speed);
+  setMotorSpeed(FR_PWM_PIN, FR_DIR_PIN, 2, speed);
   if (motorDiagnostics && speed != 0) {
     Serial.printf("🔄 FR: %d%%\n", speed);
   }
 }
 
 void motorRearRight(int speed) {
-  setMotorSpeed(RR_PWM_PIN, RR_DIR_PIN, speed);
+  setMotorSpeed(RR_PWM_PIN, RR_DIR_PIN, 3, speed);
   if (motorDiagnostics && speed != 0) {
     Serial.printf("🔄 RR: %d%%\n", speed);
   }
@@ -594,30 +592,32 @@ void setup() {
   delay(1000); // Allow serial to initialize
 
   Serial.println("\n🤖 ESP32 Enhanced 4WD Robot Controller Starting...");
-  Serial.printf("Version: MG996R Fixed v2.0\n");
+  Serial.printf("Version: MG996R Fixed v2.1\n");
   Serial.printf("Build: %s %s\n", __DATE__, __TIME__);
   Serial.println("===============================================");
 
-  // Configure motor pins as digital outputs (NOT PWM)
-  Serial.println("🔧 Configuring PWM_motor control pins...");
-  // Setup PWM channels (frequency: 1000Hz, resolution: 8 bits)
-  //Front Left
-  ledcSetup(FL_PWM_CHANNEL,PWM_FREQUENCY, PWM_RESOLUTION); // 8-bit: 0-255
-  ledcAttachPin(FL_PWM_PIN, FL_PWM_CHANNEL);
-  
-  //Rear Left
-  ledcSetup(RL_PWM_CHANNEL,PWM_FREQUENCY, PWM_RESOLUTION); // 8-bit: 0-255
-  ledcAttachPin(RL_PWM_PIN, RL_PWM_CHANNEL);
-  
-  //Front Right
-  ledcSetup(FR_PWM_CHANNEL,PWM_FREQUENCY, PWM_RESOLUTION); // 8-bit: 0-255
-  ledcAttachPin(FR_PWM_PIN, FR_PWM_CHANNEL);
-  
-  //Rear Right
-  ledcSetup(RR_PWM_CHANNEL,PWM_FREQUENCY, PWM_RESOLUTION); // 8-bit: 0-255
-  ledcAttachPin(RR_PWM_PIN, RR_PWM_CHANNEL);
+  // Configure motor pins as digital outputs for direction control
+  Serial.println("🔧 Configuring motor control pins...");
 
+  pinMode(FL_DIR_PIN, OUTPUT);
+  pinMode(RL_DIR_PIN, OUTPUT);
+  pinMode(FR_DIR_PIN, OUTPUT);
+  pinMode(RR_DIR_PIN, OUTPUT);
 
+  // Setup PWM channels for motor speed control
+  // Using ledcAttach for newer ESP32 Arduino Core (3.x)
+  if (!ledcAttach(FL_PWM_PIN, PWM_FREQUENCY, PWM_RESOLUTION)) {
+    Serial.println("⚠️ Failed to attach FL PWM channel");
+  }
+  if (!ledcAttach(RL_PWM_PIN, PWM_FREQUENCY, PWM_RESOLUTION)) {
+    Serial.println("⚠️ Failed to attach RL PWM channel");
+  }
+  if (!ledcAttach(FR_PWM_PIN, PWM_FREQUENCY, PWM_RESOLUTION)) {
+    Serial.println("⚠️ Failed to attach FR PWM channel");
+  }
+  if (!ledcAttach(RR_PWM_PIN, PWM_FREQUENCY, PWM_RESOLUTION)) {
+    Serial.println("⚠️ Failed to attach RR PWM channel");
+  }
 
   // Initialize all motors to stopped state
   stopWheels();
