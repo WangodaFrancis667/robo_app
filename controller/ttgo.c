@@ -22,16 +22,27 @@
 
 /* -------- ZK-5AD Motor Driver Pinout Mapping -------- */
 // LEFT ZK-5AD Motor Driver (controls 2 left-side motors)
-constexpr uint8_t D0_LEFT = 32; // Motor A (Front Left) control pin 1
-constexpr uint8_t D1_LEFT = 15; // Motor A (Front Left) control pin 2
-constexpr uint8_t D2_LEFT = 25; // Motor B (Rear Left) control pin 1
-constexpr uint8_t D3_LEFT = 26; // Motor B (Rear Left) control pin 2
+constexpr uint8_t PWM_FREQUENCY = 1000;  //Front Left PWM-enabled  
+constexpr uint8_t PWM_RESOLUTION = 8;  //Front Left PWM-enabled  
+
+constexpr uint8_t FL_PWM_PIN = 32;  //Front Left PWM-enabled  
+constexpr uint8_t FL_DIR_PIN = 15;  //Front Left Direction pin
+constexpr uint8_t FL_PWM_CHANNEL = 0; //Front Left PWM CHANNEL
+
+constexpr uint8_t RL_PWM_PIN = 25;  //Rear Left PWM-enabled  
+constexpr uint8_t RL_DIR_PIN = 26;  //Rear Left Direction pin
+constexpr uint8_t RL_PWM_CHANNEL = 1; //Rear Left PWM CHANNEL
 
 // RIGHT ZK-5AD Motor Driver (controls 2 right-side motors)
-constexpr uint8_t D0_RIGHT = 33; // Motor A (Front Right) control pin 1
-constexpr uint8_t D1_RIGHT = 4;  // Motor A (Front Right) control pin 2
-constexpr uint8_t D2_RIGHT = 27; // Motor B (Rear Right) control pin 1
-constexpr uint8_t D3_RIGHT = 14; // Motor B (Rear Right) control pin 2
+constexpr uint8_t FR_PWM_PIN = 33;  //Front Right PWM-enabled  
+constexpr uint8_t FR_DIR_PIN = 4;  //Front Right Direction pin
+constexpr uint8_t FR_PWM_CHANNEL = 2; //Front Right PWM CHANNEL
+
+constexpr uint8_t RR_PWM_PIN = 27;  //Rear Right PWM-enabled  
+constexpr uint8_t RR_DIR_PIN = 14;  //Rear Right Direction pin
+constexpr uint8_t RR_PWM_CHANNEL = 3; //Rear Right PWM CHANNEL
+
+
 
 /* -------- MG996R Servo Configuration -------- */
 const uint8_t SERVO_PINS[6] = {12, 13, 18, 19, 21, 22};
@@ -79,6 +90,9 @@ BluetoothSerial BT;
 constexpr char BT_NAME[] = "ESP32_Robot";
 
 /* -------- FIXED ZK-5AD Motor Driver Control -------- */
+void setupMotorPWMChannels(){}
+
+
 void setMotorSpeed(uint8_t pin1, uint8_t pin2, int speed) {
   // Clamp input speed first
   speed = constrain(speed, -100, 100);
@@ -587,15 +601,18 @@ void setup() {
   Serial.println("===============================================");
 
   // Configure motor pins as digital outputs (NOT PWM)
-  Serial.println("🔧 Configuring motor control pins...");
-  pinMode(D0_LEFT, OUTPUT);
-  pinMode(D1_LEFT, OUTPUT);
-  pinMode(D2_LEFT, OUTPUT);
-  pinMode(D3_LEFT, OUTPUT);
-  pinMode(D0_RIGHT, OUTPUT);
-  pinMode(D1_RIGHT, OUTPUT);
-  pinMode(D2_RIGHT, OUTPUT);
-  pinMode(D3_RIGHT, OUTPUT);
+  Serial.println("🔧 Configuring PWM_motor control pins...");
+  // Setup PWM channels (frequency: 1000Hz, resolution: 8 bits)
+  ledcSetup(FL_PWM_CHANNEL,PWM_FREQUENCY, 8); // 8-bit: 0-255
+  ledcAttachPin(FL_PWM_PIN, FL_PWM_CHANNEL);
+  // pinMode(D0_LEFT, OUTPUT);
+  // pinMode(D1_LEFT, OUTPUT);
+  // pinMode(D2_LEFT, OUTPUT);
+  // pinMode(D3_LEFT, OUTPUT);
+  // pinMode(D0_RIGHT, OUTPUT);
+  // pinMode(D1_RIGHT, OUTPUT);
+  // pinMode(D2_RIGHT, OUTPUT);
+  // pinMode(D3_RIGHT, OUTPUT);
 
   // Initialize all motors to stopped state
   stopWheels();
