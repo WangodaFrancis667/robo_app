@@ -38,7 +38,11 @@ void CommandProcessor::sendCommandHelp() {
   BluetoothHandler::sendMessage("  TEST_MOTORS      - Test all motors");
   BluetoothHandler::sendMessage("  TEST_SERVOS      - Test all servos");
   BluetoothHandler::sendMessage("  CALIBRATE        - Calibrate servos");
-  BluetoothHandler::sendMessage("  PING             - Connection test");/**********************************************************************
+  BluetoothHandler::sendMessage("  PING             - Connection test");
+  BluetoothHandler::sendMessage("=== END HELP ===");
+}
+
+#endif // COMMAND_PROCESSOR_H/**********************************************************************
  *  command_processor.h - Command Processing System
  *  Handles parsing and execution of all robot commands
  *********************************************************************/
