@@ -583,4 +583,19 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
       debugPrint('Error sending return home command: $e');
     }
   }
+
+  /// Test basic connectivity to the server
+  Future<bool> _testConnectivity(String url) async {
+    try {
+      debugPrint('Testing basic connectivity to: $url');
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(Duration(seconds: 5));
+      debugPrint('Test response status: ${response.statusCode}');
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Connectivity test failed: $e');
+      return false;
+    }
+  }
 }
