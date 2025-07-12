@@ -125,6 +125,13 @@ void MotorController::update() {
 void MotorController::moveForward(int speed) {
   speed = CONSTRAIN_SPEED(speed);
   
+  // Check collision avoidance if enabled
+  extern bool checkCollisionSafety(bool movingForward);
+  if (!checkCollisionSafety(true)) {
+    DEBUG_PRINTLN("⚠ Forward movement blocked by collision avoidance");
+    return;
+  }
+  
   if (DEBUG_MOTOR) {
     DEBUG_PRINTLN("⬆ Moving forward at " + String(speed) + "%");
   }
@@ -139,6 +146,13 @@ void MotorController::moveForward(int speed) {
 
 void MotorController::moveBackward(int speed) {
   speed = CONSTRAIN_SPEED(speed);
+  
+  // Check collision avoidance if enabled
+  extern bool checkCollisionSafety(bool movingForward);
+  if (!checkCollisionSafety(false)) {
+    DEBUG_PRINTLN("⚠ Backward movement blocked by collision avoidance");
+    return;
+  }
   
   if (DEBUG_MOTOR) {
     DEBUG_PRINTLN("⬇ Moving backward at " + String(speed) + "%");
