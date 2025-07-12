@@ -63,8 +63,30 @@
 #define SERVO_WRIST_TILT 10 // Wrist tilt servo
 #define SERVO_GRIPPER 11    // Gripper servo
 
+// HC-SR04 Ultrasonic Sensors
+#define FRONT_SENSOR_TRIG 30    // Front sensor trigger pin
+#define FRONT_SENSOR_ECHO 31    // Front sensor echo pin
+#define REAR_SENSOR_TRIG 32     // Rear sensor trigger pin
+#define REAR_SENSOR_ECHO 33     // Rear sensor echo pin
+
 // Emergency stop button (optional)
 #define EMERGENCY_STOP_PIN 12
+
+// ========== SENSOR CONFIGURATION ==========
+
+// Sensor indices
+#define FRONT_SENSOR 0
+#define REAR_SENSOR 1
+
+// Distance thresholds (in centimeters)
+#define COLLISION_DISTANCE_STOP 15      // Stop immediately if object closer than this
+#define COLLISION_DISTANCE_SLOW 30      // Slow down if object closer than this
+#define COLLISION_DISTANCE_WARN 50      // Warning distance
+#define MAX_SENSOR_DISTANCE 200         // Maximum reliable sensor distance
+
+// Sensor update intervals
+#define SENSOR_UPDATE_INTERVAL 50       // Update sensors every 50ms
+#define SENSOR_STABILIZE_COUNT 3        // Number of consistent readings for stable value
 
 // ========== MOTOR CONFIGURATION ==========
 
@@ -136,6 +158,30 @@ struct ServoState {
   String name;
 };
 
+// Sensor state structure
+struct SensorState {
+  float currentDistance;
+  float lastStableDistance;
+  bool isObstacleDetected;
+  bool isCollisionRisk;
+  unsigned long lastUpdate;
+  int stableReadingCount;
+  String name;
+  bool isActive;
+};
+
+// Sensor status structure for Flutter app
+struct SensorStatus {
+  float frontDistance;
+  float rearDistance;
+  bool frontObstacle;
+  bool rearObstacle;
+  bool frontCollisionRisk;
+  bool rearCollisionRisk;
+  bool sensorsActive;
+  unsigned long lastUpdate;
+};
+
 // Command structure
 struct Command {
   String type;
@@ -168,6 +214,8 @@ class MotorController;
 class ServoArm;
 class CommandProcessor;
 class SystemStatus;
+class SensorManager;
+class CollisionAvoidance;
 
 // ========== COMMAND DEFINITIONS ==========
 
@@ -185,6 +233,12 @@ class SystemStatus;
 #define CMD_SERVO_MOVE "SERVO"
 #define CMD_GRIPPER_OPEN "GRIPPER_OPEN"
 #define CMD_GRIPPER_CLOSE "GRIPPER_CLOSE"
+
+// Sensor commands
+#define CMD_SENSOR_STATUS "SENSOR_STATUS"
+#define CMD_SENSORS_ENABLE "SENSORS_ENABLE"
+#define CMD_SENSORS_DISABLE "SENSORS_DISABLE"
+#define CMD_COLLISION_DISTANCE "COLLISION_DIST"
 
 // System commands
 #define CMD_STATUS "STATUS"
