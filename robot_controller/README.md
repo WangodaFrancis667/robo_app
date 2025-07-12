@@ -1,6 +1,6 @@
-# 4WD Robot with 6-Servo Arm - Bluetooth Control System
+# 4WD Robot with 6-Servo Arm - Bluetooth Control System + Collision Avoidance
 
-A modular Arduino Mega 2560 control system for a 4-wheel drive robot with a 6-servo robotic arm, controlled via Bluetooth.
+A modular Arduino Mega 2560 control system for a 4-wheel drive robot with a 6-servo robotic arm, controlled via Bluetooth with integrated HC-SR04 ultrasonic sensors for collision avoidance.
 
 ## 📁 Project Structure
 
@@ -8,9 +8,13 @@ A modular Arduino Mega 2560 control system for a 4-wheel drive robot with a 6-se
 robot_controller/
 ├── main.ino                 # Main entry point
 ├── config.h                 # Configuration and pin definitions
+├── utils.h                  # Utility functions
 ├── bluetooth_handler.h      # Bluetooth communication
 ├── motor_controller.h       # 4-wheel motor control
 ├── servo_arm.h             # 6-servo arm control
+├── sensor_manager.h        # HC-SR04 sensor management
+├── collision_avoidance.h   # Collision prevention system
+├── sensor_status.h         # Sensor status for Flutter app
 ├── command_processor.h      # Command parsing and execution
 ├── system_status.h         # System monitoring and safety
 └── README.md               # This file
@@ -29,6 +33,10 @@ robot_controller/
 ### Servo Arm
 - 6x Servo motors (SG90 or similar)
 - Servo power supply (5V, adequate current rating)
+
+### Collision Avoidance Sensors
+- 2x HC-SR04 Ultrasonic sensors (front and rear)
+- Mounting brackets for sensors
 
 ### Bluetooth Communication
 - HC-05 or HC-06 Bluetooth module
@@ -66,6 +74,21 @@ Driver 2 (Right Motors):
 - Pin 9  → Wrist Rotation Servo
 - Pin 10 → Wrist Tilt Servo
 - Pin 11 → Gripper Servo
+```
+
+### HC-SR04 Ultrasonic Sensors
+```
+Front Sensor:
+- Pin 30 → Trigger Pin
+- Pin 31 → Echo Pin
+- 5V → VCC
+- GND → GND
+
+Rear Sensor:
+- Pin 32 → Trigger Pin
+- Pin 33 → Echo Pin
+- 5V → VCC
+- GND → GND
 ```
 
 ### Bluetooth Module
@@ -142,6 +165,17 @@ SERVO5:angle      # Control wrist tilt (0-180°)
 SERVO6:angle      # Control gripper (0-180°)
 GRIPPER_OPEN      # Open gripper fully
 GRIPPER_CLOSE     # Close gripper fully
+```
+
+### Collision Avoidance Commands
+```
+SENSOR_STATUS     # Get current sensor readings
+SENSOR_DETAILED   # Get detailed sensor data JSON
+SENSORS_ENABLE    # Enable collision avoidance
+SENSORS_DISABLE   # Disable collision avoidance
+COLLISION_DIST:cm # Set collision distance (5-100cm)
+TEST_SENSORS      # Test both sensors
+CALIBRATE_SENSORS # Calibrate sensor readings
 ```
 
 ### System Commands
