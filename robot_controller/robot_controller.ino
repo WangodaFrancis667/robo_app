@@ -39,6 +39,11 @@ void emergencyStopAllMotors() {
   MotorController::emergencyStop();
 }
 
+// Function to check collision safety (solves circular dependency)
+bool checkCollisionSafety(bool movingForward) {
+  return !CollisionAvoidance::shouldStopMovement(movingForward);
+}
+
 void setup() {
   // Initialize serial for debugging
   Serial.begin(115200);
