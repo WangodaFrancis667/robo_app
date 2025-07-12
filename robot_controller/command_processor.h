@@ -1,4 +1,44 @@
-/**********************************************************************
+void CommandProcessor::sendCommandHelp() {
+  BluetoothHandler::sendMessage("=== ROBOT COMMAND HELP ===");
+  BluetoothHandler::sendMessage("MOTOR COMMANDS:");
+  BluetoothHandler::sendMessage("  FORWARD:speed    - Move forward (0-100)");
+  BluetoothHandler::sendMessage("  BACKWARD:speed   - Move backward (0-100)");
+  BluetoothHandler::sendMessage("  LEFT:speed       - Turn left (0-100)");
+  BluetoothHandler::sendMessage("  RIGHT:speed      - Turn right (0-100)");
+  BluetoothHandler::sendMessage("  TANK:left,right  - Tank drive (-100 to 100)");
+  BluetoothHandler::sendMessage("  STOP             - Stop all motors");
+  BluetoothHandler::sendMessage("");
+  BluetoothHandler::sendMessage("SERVO ARM COMMANDS:");
+  BluetoothHandler::sendMessage("  ARM_HOME         - Move arm to home position");
+  BluetoothHandler::sendMessage("  ARM_PRESET:1-5   - Move to preset position");
+  BluetoothHandler::sendMessage("  SERVO1:angle     - Control base servo (0-180)");
+  BluetoothHandler::sendMessage("  SERVO2:angle     - Control shoulder servo");
+  BluetoothHandler::sendMessage("  SERVO3:angle     - Control elbow servo");
+  BluetoothHandler::sendMessage("  SERVO4:angle     - Control wrist rotation");
+  BluetoothHandler::sendMessage("  SERVO5:angle     - Control wrist tilt");
+  BluetoothHandler::sendMessage("  SERVO6:angle     - Control gripper");
+  BluetoothHandler::sendMessage("  GRIPPER_OPEN     - Open gripper");
+  BluetoothHandler::sendMessage("  GRIPPER_CLOSE    - Close gripper");
+  BluetoothHandler::sendMessage("");
+  BluetoothHandler::sendMessage("SENSOR COMMANDS:");
+  BluetoothHandler::sendMessage("  SENSOR_STATUS    - Get current sensor status");
+  BluetoothHandler::sendMessage("  SENSOR_DETAILED  - Get detailed sensor data");
+  BluetoothHandler::sendMessage("  SENSORS_ENABLE   - Enable collision avoidance");
+  BluetoothHandler::sendMessage("  SENSORS_DISABLE  - Disable collision avoidance");
+  BluetoothHandler::sendMessage("  COLLISION_DIST:cm- Set collision distance");
+  BluetoothHandler::sendMessage("  TEST_SENSORS     - Test all sensors");
+  BluetoothHandler::sendMessage("  CALIBRATE_SENSORS- Calibrate sensors");
+  BluetoothHandler::sendMessage("");
+  BluetoothHandler::sendMessage("SYSTEM COMMANDS:");
+  BluetoothHandler::sendMessage("  STATUS           - Get system status");
+  BluetoothHandler::sendMessage("  SPEED:value      - Set motor speed (20-100)");
+  BluetoothHandler::sendMessage("  SERVO_SPEED:val  - Set servo speed (1-5)");
+  BluetoothHandler::sendMessage("  DEBUG:0/1        - Toggle debug mode");
+  BluetoothHandler::sendMessage("  EMERGENCY        - Emergency stop all");
+  BluetoothHandler::sendMessage("  TEST_MOTORS      - Test all motors");
+  BluetoothHandler::sendMessage("  TEST_SERVOS      - Test all servos");
+  BluetoothHandler::sendMessage("  CALIBRATE        - Calibrate servos");
+  BluetoothHandler::sendMessage("  PING             - Connection test");/**********************************************************************
  *  command_processor.h - Command Processing System
  *  Handles parsing and execution of all robot commands
  *********************************************************************/
@@ -167,13 +207,24 @@ void CommandProcessor::executeCommand(const Command& cmd) {
 }
 
 void CommandProcessor::processMotorCommand(const Command& cmd) {
+  // Check collision avoidance before executing motor commands
+  if (!CollisionAvoidance::isMovementSafe(cmd.type, cmd.value1)) {
+    BluetoothHandler::sendMessage("BLOCKED_BY_COLLISION_AVOIDANCE:" + cmd.type);
+    BluetoothHandler::sendResponse(cmd.type, false);
+    return;
+  }
+  
   if (cmd.type == CMD_FORWARD) {
     int speed = constrain(cmd.value1, 0, 100);
+    // Apply collision avoidance speed adjustment
+    speed = CollisionAvoidance::adjustSpeedForSafety(speed, true);
     MotorController::moveForward(speed);
     BluetoothHandler::sendResponse(CMD_FORWARD);
     
   } else if (cmd.type == CMD_BACKWARD) {
     int speed = constrain(cmd.value1, 0, 100);
+    // Apply collision avoidance speed adjustment
+    speed = CollisionAvoidance::adjustSpeedForSafety(speed, false);
     MotorController::moveBackward(speed);
     BluetoothHandler::sendResponse(CMD_BACKWARD);
     
@@ -312,6 +363,44 @@ void CommandProcessor::processSystemCommand(const Command& cmd) {
   } else if (cmd.type == "RESET") {
     SystemStatus::resetSystem();
     BluetoothHandler::sendResponse("RESET");
+    
+  } else if (cmd.type == CMD_SENSOR_STATUS) {
+    SensorStatusManager::sendStatusNow();
+    BluetoothHandler::sendResponse(CMD_SENSOR_STATUS);
+    
+  } else if (cmd.type == CMD_SENSORS_ENABLE) {
+    SensorManager::enableSensors();
+    CollisionAvoidance::enable();
+    BluetoothHandler::sendResponse(CMD_SENSORS_ENABLE);
+    
+  } else if (cmd.type == CMD_SENSORS_DISABLE) {
+    SensorManager::disableSensors();
+    CollisionAvoidance::disable();
+    BluetoothHandler::sendResponse(CMD_SENSORS_DISABLE);
+    
+  } else if (cmd.type == CMD_COLLISION_DISTANCE) {
+    float distance = constrain(cmd.value1, 5, 100);
+    SensorManager::setCollisionDistance(distance);
+    BluetoothHandler::sendMessage("COLLISION_DISTANCE_SET:" + String(distance));
+    BluetoothHandler::sendResponse(CMD_COLLISION_DISTANCE);
+    
+  } else if (cmd.type == "COLLISION_AGGRESSIVENESS") {
+    int level = constrain(cmd.value1, 1, 3);
+    CollisionAvoidance::setAggressiveness(level);
+    BluetoothHandler::sendMessage("AGGRESSIVENESS_SET:" + String(level));
+    BluetoothHandler::sendResponse("COLLISION_AGGRESSIVENESS");
+    
+  } else if (cmd.type == "SENSOR_DETAILED") {
+    SensorStatusManager::sendDetailedStatus();
+    BluetoothHandler::sendResponse("SENSOR_DETAILED");
+    
+  } else if (cmd.type == "TEST_SENSORS") {
+    SensorManager::testSensors();
+    BluetoothHandler::sendResponse("TEST_SENSORS");
+    
+  } else if (cmd.type == "CALIBRATE_SENSORS") {
+    SensorManager::calibrateSensors();
+    BluetoothHandler::sendResponse("CALIBRATE_SENSORS");
     
   } else {
     DEBUG_PRINTLN("❌ Unknown command: " + cmd.type);
