@@ -6,6 +6,8 @@
  *  - Bluetooth communication
  *  - Motor control (4 wheels)
  *  - Servo arm control (6 servos)
+ *  - Sensor management (HC-SR04 ultrasonic sensors)
+ *  - Collision avoidance system
  *  - System status and safety
  *********************************************************************/
 
@@ -13,6 +15,9 @@
 #include "system_status.h"
 #include "motor_controller.h"
 #include "servo_arm.h"
+#include "sensor_manager.h"
+#include "collision_avoidance.h"
+#include "sensor_status.h"
 #include "command_processor.h"
 #include "bluetooth_handler.h"
 
@@ -24,6 +29,16 @@ void addCommandToQueue(const String& cmd) {
   CommandProcessor::addCommand(cmd);
 }
 
+// Function to send Bluetooth messages (solves circular dependency)
+void sendBluetoothMessage(const String& message) {
+  BluetoothHandler::sendMessage(message);
+}
+
+// Function for emergency motor stop (solves circular dependency)
+void emergencyStopAllMotors() {
+  MotorController::emergencyStop();
+}
+
 void setup() {
   // Initialize serial for debugging
   Serial.begin(115200);
@@ -31,7 +46,8 @@ void setup() {
   
   Serial.println("===============================================");
   Serial.println("4WD Robot with 6-Servo Arm - Bluetooth Control");
-  Serial.println("Version: 2.0");
+  Serial.println("+ HC-SR04 Collision Avoidance System");
+  Serial.println("Version: 2.1");
   Serial.println("===============================================");
   
   // Initialize all subsystems
@@ -43,6 +59,7 @@ void setup() {
   
   Serial.println("✅ System Ready!");
   Serial.println("📱 Waiting for Bluetooth commands...");
+  Serial.println("🛡 Collision avoidance: ACTIVE");
   Serial.println("===============================================");
   
   // Send ready signal to Bluetooth
@@ -65,10 +82,24 @@ void loop() {
   // Update servo arm
   ServoArm::update();
   
-  // Safety check - stop all if timeout
+  // Update sensor manager
+  SensorManager::update();
+  
+  // Update collision avoidance
+  CollisionAvoidance::update();
+  
+  // Update sensor status for Flutter app
+  SensorStatusManager::update();
+  
+  // Safety check - stop all if timeout or collision risk
   if (SystemStatus::isCommandTimeout()) {
     MotorController::stopAll();
     ServoArm::stopAll();
+  }
+  
+  // Additional safety check for collision avoidance
+  if (CollisionAvoidance::isEmergencyStopActive()) {
+    MotorController::stopAll();
   }
   
   // Small delay to prevent overwhelming the system
@@ -90,7 +121,16 @@ void initializeSystem() {
   // Initialize servo arm
   ServoArm::init();
   
-  // Initialize command processor
+  // Initialize sensor manager
+  SensorManager::init();
+  
+  // Initialize collision avoidance
+  CollisionAvoidance::init();
+  
+  // Initialize sensor status manager
+  SensorStatusManager::init();
+  
+  // Initialize command processor (last, as it may depend on others)
   CommandProcessor::init();
   
   Serial.println("✅ All subsystems initialized");
