@@ -161,7 +161,7 @@
  
 void setMotorDirection(int motorNum, int direction) {
   int d0Pin, d1Pin, enablePin;
-  getMotorPins(motorNum, d0Pin, d1Pin, enablePin);
+  getMotorPins(motorNum, d0Pin, d1Pin);
 
   // Direction: 1 = Forward, -1 = Reverse, 0 = Stop
   if (direction == 1) {
@@ -323,129 +323,7 @@ void tankDrive() {
   setMotorDirection(REAR_RIGHT, -1);
 }
 
- void processCommand(String command) {
-   command.trim();
-   command.toUpperCase();
-   lastCommand = millis();
-   
-   if (debugMode) {
-     Serial.println("📨 Command: " + command);
-   }
-   
-   // Individual motor testing commands
-   if (command.startsWith("TEST_FL:")) {
-     int speed = command.substring(8).toInt();
-     speed = constrain(speed, -100, 100);
-     testIndividualMotor(FRONT_LEFT, speed);
-     Serial.println("OK TEST_FL");
-     
-   } else if (command.startsWith("TEST_RL:")) {
-     int speed = command.substring(8).toInt();
-     speed = constrain(speed, -100, 100);
-     testIndividualMotor(REAR_LEFT, speed);
-     Serial.println("OK TEST_RL");
-     
-   } else if (command.startsWith("TEST_FR:")) {
-     int speed = command.substring(8).toInt();
-     speed = constrain(speed, -100, 100);
-     testIndividualMotor(FRONT_RIGHT, speed);
-     Serial.println("OK TEST_FR");
-     
-   } else if (command.startsWith("TEST_RR:")) {
-     int speed = command.substring(8).toInt();
-     speed = constrain(speed, -100, 100);
-     testIndividualMotor(REAR_RIGHT, speed);
-     Serial.println("OK TEST_RR");
-     
-   } 
-   
-   // Movement commands
-   else if (command.startsWith("FORWARD:")) {
-     int speed = command.substring(8).toInt();
-     speed = constrain(speed, 0, 100);
-     moveForward(speed);
-     Serial.println("OK FORWARD");
-     
-   } else if (command.startsWith("BACKWARD:")) {
-     int speed = command.substring(9).toInt();
-     speed = constrain(speed, 0, 100);
-     moveBackward(speed);
-     Serial.println("OK BACKWARD");
-     
-   } else if (command.startsWith("LEFT:")) {
-     int speed = command.substring(5).toInt();
-     speed = constrain(speed, 0, 100);
-     turnLeft(speed);
-     Serial.println("OK LEFT");
-     
-   } else if (command.startsWith("RIGHT:")) {
-     int speed = command.substring(6).toInt();
-     speed = constrain(speed, 0, 100);
-     turnRight(speed);
-     Serial.println("OK RIGHT");
-     
-   } else if (command.startsWith("TANK:")) {
-     int commaIndex = command.indexOf(',');
-     if (commaIndex > 0) {
-       int leftSpeed = command.substring(5, commaIndex).toInt();
-       int rightSpeed = command.substring(commaIndex + 1).toInt();
-       leftSpeed = constrain(leftSpeed, -100, 100);
-       rightSpeed = constrain(rightSpeed, -100, 100);
-       tankDrive(leftSpeed, rightSpeed);
-       Serial.println("OK TANK");
-     } else {
-       Serial.println("ERROR TANK_FORMAT");
-     }
-     
-   } 
-   
-   // System commands
-   else if (command.startsWith("SPEED:")) {
-     int speed = command.substring(6).toInt();
-     speed = constrain(speed, 20, 100);
-     globalSpeedMultiplier = speed;
-     Serial.println("OK SPEED:" + String(speed));
-     Serial.println("🚀 Global speed set to: " + String(speed) + "%");
-     
-   } else if (command == "STOP") {
-     stopAllMotors();
-     Serial.println("OK STOP");
-     
-   } else if (command == "TEST_ALL") {
-     testAllMotors();
-     Serial.println("OK TEST_ALL");
-     
-   } else if (command == "STATUS") {
-     Serial.println("📊 SYSTEM STATUS:");
-     Serial.println("   Speed: " + String(globalSpeedMultiplier) + "%");
-     Serial.print("   Motors: ");
-     for (int i = 0; i < 4; i++) {
-       Serial.print(motors[i].name + ":" + String(motors[i].currentSpeed) + "%");
-       if (i < 3) Serial.print(", ");
-     }
-     Serial.println();
-     Serial.println("   Uptime: " + String(millis()) + "ms");
-     
-     Serial.println("OK STATUS");
-     
-   } else if (command.startsWith("DEBUG:")) {
-     int debug = command.substring(6).toInt();
-     debugMode = (debug == 1);
-     Serial.println("OK DEBUG:" + String(debug));
-     Serial.println("🔍 Debug mode: " + String(debugMode ? "ON" : "OFF"));
-     
-   } else if (command == "HELP") {
-     printHelp();
-     Serial.println("OK HELP");
-     
-   } else if (command == "PING") {
-     Serial.println("PONG");
-     
-   } else {
-     Serial.println("ERROR UNKNOWN_COMMAND");
-     Serial.println("❌ Unknown command. Type HELP for available commands.");
-   }
- }
+
  
  // Simple memory check function
  int freeMemory() {
@@ -699,10 +577,10 @@ void tankDrive() {
      if (sscanf(cmd + 2, "%c,%d", &lr, &val) == 2) {
        val = constrain(val, -100, 100);  // Clamp input
        if (lr == 'L' || lr == 'l') {
-         turnLeft(val);
+         turnLeft();
          port.printf("OK M L %d\n", val);
        } else if (lr == 'R' || lr == 'r') {
-         turnRight(val);
+         turnRight();
          port.printf("OK M R %d\n", val);
        } else {
          port.printf("ERR M: Invalid side '%c' (use L or R)\n", lr);
@@ -710,38 +588,8 @@ void tankDrive() {
      } else port.println("ERR M: Format should be M:L,speed or M:R,speed");
    }
  
-   else if (cmd[0] == 'W') {                         // W:direction,speed
-     char dir;
-     int speed;
-     if (sscanf(cmd + 2, "%c,%d", &dir, &speed) == 2) {
-       speed = constrain(speed, -100, 100);  // Clamp input
-       switch (dir) {
-         case 'F': case 'f': moveForward(speed); break;
-         case 'B': case 'b': moveBackward(speed); break;
-         case 'L': case 'l': turnLeft(speed); break;
-         case 'R': case 'r': turnRight(speed); break;
-         default: port.printf("ERR W: Invalid direction '%c'\n", dir); return;
-       }
-       port.printf("OK W %c %d\n", dir, speed);
-     } else port.println("ERR W: Format should be W:direction,speed");
-   }
  
-   else if (cmd[0] == 'I') {                         // I:FL,RL,FR,RR
-     int fl, rl, fr, rr;
-     if (sscanf(cmd + 2, "%d,%d,%d,%d", &fl, &rl, &fr, &rr) == 4) {
-       // Clamp all inputs
-       fl = constrain(fl, -100, 100);
-       rl = constrain(rl, -100, 100);
-       fr = constrain(fr, -100, 100);
-       rr = constrain(rr, -100, 100);
-       
-       //motorFrontLeft(fl);
-       //motorRearLeft(rl);
-       //motorFrontRight(fr);
-       //motorRearRight(rr);
-       port.printf("OK I %d %d %d %d\n", fl, rl, fr, rr);
-     } else port.println("ERR I: Format should be I:FL,RL,FR,RR");
-   }
+ 
  
    else if (cmd[0] == 'G') {                         // G:speed - Global speed multiplier
      int speed;
@@ -800,23 +648,7 @@ void tankDrive() {
      if (motorDiagnostics) Serial.println("🚨 EMERGENCY STOP - All motion halted");
    }
    
-   else if (cmd[0] == 'T') {                         // T:L,R - Tank drive
-     int left, right;
-     if (sscanf(cmd + 2, "%d,%d", &left, &right) == 2) {
-       // Clamp inputs
-       left = constrain(left, -100, 100);
-       right = constrain(right, -100, 100);
-       
-       turnLeft(left);
-       turnRight(right);
-       port.printf("OK T %d %d\n", left, right);
-       
-       if (motorDiagnostics) {
-         Serial.printf("🎮 Tank drive: L=%d%%, R=%d%% (global=%d%%)\n", 
-                       left, right, globalSpeedMultiplier);
-       }
-     } else port.println("ERR T: Format should be T:left,right");
-   }
+
    
    else { 
      port.printf("ERR ?: Unknown command '%c'\n", cmd[0]); 
@@ -929,8 +761,7 @@ void tankDrive() {
  
        Serial.println("new command");
          
-           //processCommand(commandBuffer);
-           //commandBuffer = "";
+         
        }
      } else {
        commandBuffer += c;
