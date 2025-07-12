@@ -124,24 +124,13 @@
    pinMode(DRIVER2_D2, OUTPUT);
    pinMode(DRIVER2_D3, OUTPUT);
    
- #ifndef NO_SEPARATE_ENABLE_PINS
-   // PWM Enable pins
-   pinMode(DRIVER1_EN1, OUTPUT);
-   pinMode(DRIVER1_EN2, OUTPUT);
-   pinMode(DRIVER2_EN1, OUTPUT);
-   pinMode(DRIVER2_EN2, OUTPUT);
-   Serial.println("✅ Using separate PWM enable pins");
- #else
-   Serial.println("✅ Using direct PWM on D pins");
- #endif
    
    Serial.println("📍 Pin Configuration:");
    Serial.println("   Driver 1 (Left): D0=22, D1=23, D2=24, D3=25");
    Serial.println("   Driver 2 (Right): D0=26, D1=27, D2=28, D3=29");
    
- #ifndef NO_SEPARATE_ENABLE_PINS
-   Serial.println("   PWM Enable: EN1=2, EN2=3, EN3=4, EN4=5");
- #endif
+
+   
  }
  
  void printHelp() {
@@ -170,264 +159,170 @@
    Serial.println("⚡ Current Speed: " + String(globalSpeedMultiplier) + "%");
  }
  
- void setMotorSpeed(int motorNum, int speed) {
-   if (motorNum < 0 || motorNum > 3) return;
-   
-   // Clamp speed to valid range
-   speed = constrain(speed, -100, 100);
-   
-   // Apply global speed multiplier
-   int adjustedSpeed = (speed * globalSpeedMultiplier) / 100;
-   adjustedSpeed = constrain(adjustedSpeed, -100, 100);
-   
-   // Apply minimum speed threshold
-   if (abs(adjustedSpeed) > 0 && abs(adjustedSpeed) < MIN_SPEED_THRESHOLD) {
-     adjustedSpeed = (adjustedSpeed > 0) ? MIN_SPEED_THRESHOLD : -MIN_SPEED_THRESHOLD;
-   }
-   
-   // Update motor state
-   motors[motorNum].currentSpeed = adjustedSpeed;
-   motors[motorNum].lastUpdate = millis();
-   
-   // Get motor control pins
-   int d0Pin, d1Pin;
-   int enablePin = -1;
-   getMotorPins(motorNum, d0Pin, d1Pin, enablePin);
-   
-   if (adjustedSpeed == 0) {
-     // Stop motor
-     digitalWrite(d0Pin, LOW);
-     digitalWrite(d1Pin, LOW);
-     
- #ifndef NO_SEPARATE_ENABLE_PINS
-     if (enablePin != -1) {
-       analogWrite(enablePin, 0);
-     }
- #endif
-     
-     motors[motorNum].isRunning = false;
-     
-     if (debugMode) {
-       Serial.print("🛑 Motor ");
-       Serial.print(motors[motorNum].name);
-       Serial.println(" STOPPED");
-     }
-     return;
-   }
-   
-   // Calculate PWM value (0-255)
-   int pwmValue = map(abs(adjustedSpeed), 0, 100, 0, 255);
-   
- #ifdef NO_SEPARATE_ENABLE_PINS
-   // Direct PWM control on D pins
-   if (adjustedSpeed > 0) {
-     // Forward: D0=PWM, D1=LOW
-     analogWrite(d0Pin, pwmValue);
-     digitalWrite(d1Pin, LOW);
-   } else {
-     // Reverse: D0=LOW, D1=PWM
-     digitalWrite(d0Pin, LOW);
-     analogWrite(d1Pin, pwmValue);
-   }
- #else
-   // Using separate enable pins for PWM
-   if (adjustedSpeed > 0) {
-     // Forward: D0=HIGH, D1=LOW
-     digitalWrite(d0Pin, HIGH);
-     digitalWrite(d1Pin, LOW);
-   } else {
-     // Reverse: D0=LOW, D1=HIGH
-     digitalWrite(d0Pin, LOW);
-     digitalWrite(d1Pin, HIGH);
-   }
-   
-   // Set PWM on enable pin
-   if (enablePin != -1) {
-     analogWrite(enablePin, pwmValue);
-   }
- #endif
-   
-   motors[motorNum].isRunning = true;
-   
-   if (debugMode) {
-     Serial.print("🔧 Motor ");
-     Serial.print(motors[motorNum].name);
-     Serial.print(": ");
-     Serial.print(adjustedSpeed);
-     Serial.print("% -> PWM:");
-     Serial.print(pwmValue);
-     Serial.print(", DIR:");
-     Serial.println(adjustedSpeed > 0 ? "FWD" : "REV");
-   }
- }
+void setMotorDirection(int motorNum, int direction) {
+  int d0Pin, d1Pin, enablePin;
+  getMotorPins(motorNum, d0Pin, d1Pin, enablePin);
+
+  // Direction: 1 = Forward, -1 = Reverse, 0 = Stop
+  if (direction == 1) {
+    digitalWrite(d0Pin, HIGH);
+    digitalWrite(d1Pin, LOW);
+  } else if (direction == -1) {
+    digitalWrite(d0Pin, LOW);
+    digitalWrite(d1Pin, HIGH);
+  } else {
+    digitalWrite(d0Pin, LOW);
+    digitalWrite(d1Pin, LOW);  // Stop (freewheel)
+  }
+
+  motors[motorNum].currentSpeed = direction * 100; // just for tracking
+  motors[motorNum].isRunning = (direction != 0);
+  motors[motorNum].lastUpdate = millis();
+
+  if (debugMode) {
+    Serial.print("🔧 Motor ");
+    Serial.print(motors[motorNum].name);
+    Serial.print(": DIR=");
+    if (direction == 1) Serial.println("FWD");
+    else if (direction == -1) Serial.println("REV");
+    else Serial.println("STOP");
+  }
+}
+
  
- void getMotorPins(int motorNum, int &d0Pin, int &d1Pin, int &enablePin) {
+ void getMotorPins(int motorNum, int &d0Pin, int &d1Pin) {
    switch (motorNum) {
      case FRONT_LEFT:
        d0Pin = DRIVER1_D0;
        d1Pin = DRIVER1_D1;
- #ifndef NO_SEPARATE_ENABLE_PINS
-       enablePin = DRIVER1_EN1;
- #else
-       enablePin = -1;
- #endif
        break;
+
        
      case REAR_LEFT:
        d0Pin = DRIVER1_D2;
        d1Pin = DRIVER1_D3;
- #ifndef NO_SEPARATE_ENABLE_PINS
-       enablePin = DRIVER1_EN2;
- #else
-       enablePin = -1;
- #endif
        break;
+
        
      case FRONT_RIGHT:
        d0Pin = DRIVER2_D0;
        d1Pin = DRIVER2_D1;
- #ifndef NO_SEPARATE_ENABLE_PINS
-       enablePin = DRIVER2_EN1;
- #else
-       enablePin = -1;
- #endif
        break;
+ 
        
      case REAR_RIGHT:
        d0Pin = DRIVER2_D2;
        d1Pin = DRIVER2_D3;
- #ifndef NO_SEPARATE_ENABLE_PINS
-       enablePin = DRIVER2_EN2;
- #else
-       enablePin = -1;
- #endif
        break;
    }
  }
  
- void stopAllMotors() {
-   for (int i = 0; i < 4; i++) {
-     setMotorSpeed(i, 0);
-   }
-   if (debugMode) {
-     Serial.println("⏹️ All motors stopped");
-   }
- }
+void stopAllMotors() {
+  for (int i = 0; i < 4; i++) {
+    setMotorDirection(i, 0);
+  }
+
+  if (debugMode) {
+    Serial.println("⏹️ All motors stopped");
+  }
+}
+
  
- void testIndividualMotor(int motorNum, int speed, int duration = 2000) {
-   Serial.print("🧪 Testing motor ");
-   Serial.print(motors[motorNum].name);
-   Serial.print(" at ");
-   Serial.print(speed);
-   Serial.println("%");
-   
-   setMotorSpeed(motorNum, speed);
-   delay(duration);
-   setMotorSpeed(motorNum, 0);
-   delay(500);
- }
+void testIndividualMotor(int motorNum, int ignored = 0, int duration = 2000) {
+  Serial.print("🧪 Testing motor ");
+  Serial.println(motors[motorNum].name);
+
+  setMotorDirection(motorNum, 1); // Forward
+  delay(duration);
+
+  setMotorDirection(motorNum, -1); // Reverse
+  delay(duration);
+
+  setMotorDirection(motorNum, 0); // Stop
+  delay(500);
+}
+
  
- void testAllMotors() {
-   Serial.println("🧪 Starting comprehensive motor test...");
-   Serial.println("⚡ Speed: " + String(globalSpeedMultiplier) + "%");
-   
-   int testSpeed = 50;
-   
-   // Test each motor individually
-   for (int i = 0; i < 4; i++) {
-     Serial.println("Testing " + motors[i].name + " motor...");
-     
-     // Forward test
-     Serial.println("  → Forward");
-     testIndividualMotor(i, testSpeed, 1500);
-     
-     // Reverse test
-     Serial.println("  → Reverse");
-     testIndividualMotor(i, -testSpeed, 1500);
-     
-     Serial.println("  ✅ " + motors[i].name + " test complete");
-   }
-   
-   Serial.println("🧪 Testing coordinated movements...");
-   
-   // Test movements
-   Serial.println("  → All Forward");
-   moveForward(testSpeed);
-   delay(1500);
-   stopAllMotors();
-   delay(500);
-   
-   Serial.println("  → All Backward");
-   moveBackward(testSpeed);
-   delay(1500);
-   stopAllMotors();
-   delay(500);
-   
-   Serial.println("  → Turn Left");
-   turnLeft(testSpeed);
-   delay(1500);
-   stopAllMotors();
-   delay(500);
-   
-   Serial.println("  → Turn Right");
-   turnRight(testSpeed);
-   delay(1500);
-   stopAllMotors();
-   
-   Serial.println("✅ All tests completed!");
- }
- 
+void testAllMotors() {
+  Serial.println("🧪 Starting basic motor test (no PWM)");
+
+  for (int i = 0; i < 4; i++) {
+    Serial.println("Testing " + motors[i].name + "...");
+    testIndividualMotor(i, 0, 1500);
+  }
+
+  Serial.println("🧪 Testing coordinated motions...");
+  moveForward();
+  delay(1500);
+  stopAllMotors();
+
+  delay(500);
+  moveBackward();
+  delay(1500);
+  stopAllMotors();
+
+  delay(500);
+  turnLeft();
+  delay(1500);
+  stopAllMotors();
+
+  delay(500);
+  turnRight();
+  delay(1500);
+  stopAllMotors();
+
+  Serial.println("✅ All tests done.");
+}
+
  // Movement functions
- void moveForward(int speed) {
-   if (debugMode) {
-     Serial.println("⬆️ Moving forward at " + String(speed) + "%");
-   }
-   setMotorSpeed(FRONT_LEFT, speed);
-   setMotorSpeed(REAR_LEFT, speed);
-   setMotorSpeed(FRONT_RIGHT, -speed);
-   setMotorSpeed(REAR_RIGHT, -speed);
- }
- 
- void moveBackward(int speed) {
-   if (debugMode) {
-     Serial.println("⬇️ Moving backward at " + String(speed) + "%");
-   }
-   setMotorSpeed(FRONT_LEFT, -speed);
-   setMotorSpeed(REAR_LEFT, -speed);
-   setMotorSpeed(FRONT_RIGHT, speed);
-   setMotorSpeed(REAR_RIGHT, speed);
- }
- 
- void turnLeft(int speed) {
-   if (debugMode) {
-     Serial.println("⬅️ Turning left at " + String(speed) + "%");
-   }
-   setMotorSpeed(FRONT_LEFT, -speed);
-   setMotorSpeed(REAR_LEFT, -speed);
-   setMotorSpeed(FRONT_RIGHT,- speed);
-   setMotorSpeed(REAR_RIGHT, -speed);
- }
- 
- void turnRight(int speed) {
-   if (debugMode) {
-     Serial.println("➡️ Turning right at " + String(speed) + "%");
-   }
-   setMotorSpeed(FRONT_LEFT, speed);
-   setMotorSpeed(REAR_LEFT, speed);
-   setMotorSpeed(FRONT_RIGHT, speed);
-   setMotorSpeed(REAR_RIGHT, speed);
- }
- 
- void tankDrive(int leftSpeed, int rightSpeed) {
-   if (debugMode) {
-     Serial.println("🎮 Tank drive - Left: " + String(leftSpeed) + "%, Right: " + String(rightSpeed) + "%");
-   }
-   setMotorSpeed(FRONT_LEFT, leftSpeed);
-   setMotorSpeed(REAR_LEFT, leftSpeed);
-   setMotorSpeed(FRONT_RIGHT, rightSpeed);
-   setMotorSpeed(REAR_RIGHT, rightSpeed);
- }
- 
+ void moveForward() {
+  stopAllMotors();
+
+  if (debugMode) Serial.println("⬆️ Moving forward");
+  setMotorDirection(FRONT_LEFT, 1);
+  setMotorDirection(REAR_LEFT, 1);
+  setMotorDirection(FRONT_RIGHT, -1);
+  setMotorDirection(REAR_RIGHT, -1);
+}
+
+void moveBackward() {
+  stopAllMotors();
+
+  if (debugMode) Serial.println("⬇️ Moving backward");
+  setMotorDirection(FRONT_LEFT, -1);
+  setMotorDirection(REAR_LEFT, -1);
+  setMotorDirection(FRONT_RIGHT, 1);
+  setMotorDirection(REAR_RIGHT, 1);
+}
+
+void turnLeft() {
+  stopAllMotors();
+
+  if (debugMode) Serial.println("⬅️ Turning left");
+  setMotorDirection(FRONT_LEFT, -1);
+  setMotorDirection(REAR_LEFT, -1);
+  setMotorDirection(FRONT_RIGHT, -1);
+  setMotorDirection(REAR_RIGHT, -1);
+}
+
+void turnRight() {
+  stopAllMotors();
+
+  if (debugMode) Serial.println("➡️ Turning right");
+  setMotorDirection(FRONT_LEFT, 1);
+  setMotorDirection(REAR_LEFT, 1);
+  setMotorDirection(FRONT_RIGHT, 1);
+  setMotorDirection(REAR_RIGHT, 1);
+}
+
+void tankDrive() {
+  if (debugMode) Serial.println("🎮 Tank drive (no PWM): Left=FWD, Right=REV");
+  setMotorDirection(FRONT_LEFT, 1);
+  setMotorDirection(REAR_LEFT, 1);
+  setMotorDirection(FRONT_RIGHT, -1);
+  setMotorDirection(REAR_RIGHT, -1);
+}
+
  void processCommand(String command) {
    command.trim();
    command.toUpperCase();
@@ -689,68 +584,69 @@
  constexpr uint8_t BUFSZ = 128;
  char buf[BUFSZ]; 
  uint8_t idx = 0;
- 
  void execCmd(char* cmd, Stream& port) {
-    // Handle full word commands first
    String command = String(cmd);
-   command.trim();
-   command.toUpperCase();
-   lastCommand = millis();
-   
-   if (command.startsWith("FORWARD:")) {
-     int speed = command.substring(8).toInt();
-     speed = constrain(speed, 0, 100);
-     moveForward(speed);
-     port.println("OK FORWARD");
-     return;
-   }
-   
-   else if (command.startsWith("BACKWARD:")) {
-     int speed = command.substring(9).toInt();
-     speed = constrain(speed, 0, 100);
-     moveBackward(speed);
-     port.println("OK BACKWARD");
-     return;
-   }
-   
-   else if (command.startsWith("LEFT:")) {
-     int speed = command.substring(5).toInt();
-     speed = constrain(speed, 0, 100);
-     turnLeft(speed);
-     port.println("OK LEFT");
-     return;
-   }
-   
-   else if (command.startsWith("RIGHT:")) {
-     int speed = command.substring(6).toInt();
-     speed = constrain(speed, 0, 100);
-     turnRight(speed);
-     port.println("OK RIGHT");
-     return;
-   }
-   
-   else if (command.startsWith("TANK:")) {
-     int commaIndex = command.indexOf(',');
-     if (commaIndex > 0) {
-       int leftSpeed = command.substring(5, commaIndex).toInt();
-       int rightSpeed = command.substring(commaIndex + 1).toInt();
-       leftSpeed = constrain(leftSpeed, -100, 100);
-       rightSpeed = constrain(rightSpeed, -100, 100);
-       tankDrive(leftSpeed, rightSpeed);
-       port.println("OK TANK");
-     } else {
-       port.println("ERR TANK_FORMAT");
-     }
-     return;
-   }
-   
-   else if (command == "STOP") {
-     stopAllMotors();
-     port.println("OK STOP");
-     return;
-   }
-   
-   // Now handle single-character commands
+  command.trim();
+  command.toUpperCase();
+  lastCommand = millis();
+
+  // FORWARD command (ignores speed)
+  if (command.startsWith("FORWARD")) {
+    moveForward();
+    port.println("OK FORWARD");
+    return;
+  }
+
+  // BACKWARD command (ignores speed)
+  else if (command.startsWith("BACKWARD")) {
+    moveBackward();
+    port.println("OK BACKWARD");
+    return;
+  }
+
+  // LEFT command (ignores speed)
+  else if (command.startsWith("LEFT")) {
+    turnLeft();
+    port.println("OK LEFT");
+    return;
+  }
+
+  // RIGHT command (ignores speed)
+  else if (command.startsWith("RIGHT")) {
+    turnRight();
+    port.println("OK RIGHT");
+    return;
+  }
+
+  // TANK:left,right — only direction is considered
+  else if (command.startsWith("TANK:")) {
+    int commaIndex = command.indexOf(',');
+    if (commaIndex > 0) {
+      int left = command.substring(5, commaIndex).toInt();
+      int right = command.substring(commaIndex + 1).toInt();
+
+      int leftDir = (left > 0) ? 1 : (left < 0 ? -1 : 0);
+      int rightDir = (right > 0) ? 1 : (right < 0 ? -1 : 0);
+
+      setMotorDirection(FRONT_LEFT, leftDir);
+      setMotorDirection(REAR_LEFT, leftDir);
+      setMotorDirection(FRONT_RIGHT, rightDir);
+      setMotorDirection(REAR_RIGHT, rightDir);
+
+      port.println("OK TANK");
+    } else {
+      port.println("ERR TANK_FORMAT");
+    }
+    return;
+  }
+
+  // STOP all motors
+  else if (command == "STOP") {
+    stopAllMotors();
+    port.println("OK STOP");
+    return;
+  }
+  // Now handle single-character commands
    if (cmd[0] == 'S') {                              // S:id,angle
      int id, ang;
      if (sscanf(cmd + 2, "%d,%d", &id, &ang) == 2 &&
@@ -1020,11 +916,7 @@
     feed(Serial);
     feed(BT);
  
-      setMotorSpeed(FRONT_LEFT, 90);
-   setMotorSpeed(REAR_LEFT, 90);
-   setMotorSpeed(FRONT_RIGHT, 90);
-   setMotorSpeed(REAR_RIGHT, 90);
- 
+
    
    // Update servo positions gradually (critical for smooth movement)
    updateServos();
