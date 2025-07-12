@@ -1,33 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-
-// Main entry point for the Flutter application.
-void main() {
-  runApp(const CameraStreamApp());
-}
-
-/// The root widget for the camera stream application.
-class CameraStreamApp extends StatelessWidget {
-  const CameraStreamApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Live Robot Monitoring',
-      theme: ThemeData(
-        primarySwatch:
-            Colors.green, // Changed primary color to green for robot theme
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-        fontFamily: 'Inter', // Using Inter font for a modern look.
-      ),
-      home:
-          const LiveMonitoringScreen(), // Changed home to LiveMonitoringScreen
-    );
-  }
-}
+import 'package:flutter_mjpeg/flutter_mjpeg.dart';
 
 /// The screen responsible for displaying live camera stream and robot controls.
 class LiveMonitoringScreen extends StatefulWidget {
@@ -38,259 +13,235 @@ class LiveMonitoringScreen extends StatefulWidget {
 }
 
 class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
-  // Robot control URL (replace with your actual robot control server IP and port)
-  final String controlUrl = 'http://192.168.1.6:5000/control';
-  // MJPEG camera stream URL (replace with your Mac's actual IP and port)
-  final String streamUrl =
-      'http://192.168.1.6:8080/my_mac_camera'; // Using user's provided stream URL
+  // Replace with your Raspberry Pi's IP address
+  final String _raspberryPiIP = '192.168.137.4';//'192.168.1.8'; // Change this to your Pi's IP
+
+  // Robot control URL (if your robot control is also on the Pi)
+  String get controlUrl => 'http://$_raspberryPiIP:5000/control';
+
+  // Camera stream URL - this matches the Python server endpoint
+  String get streamUrl => 'http://$_raspberryPiIP:8080/my_mac_camera';
 
   // State variables for robot status and controls
   bool isEmergencyStop = false;
   String robotStatus = 'Active';
   String currentTask = 'Scanning for weeds';
 
-  // StreamController to push decoded image bytes to the UI.
-  StreamController<Uint8List>? _imageStreamController;
-  // HTTP client for making requests to the camera stream.
-  http.Client? _streamClient; // Renamed to avoid conflict with control client
-  // HTTP request object for the stream.
-  http.Request? _streamRequest;
-  // Subscription to the HTTP response stream.
-  StreamSubscription<List<int>>? _responseSubscription;
-
-  // State variables for UI feedback.
-  bool _isLoadingStream = false; // Renamed to be specific to stream loading
+  // State variables for UI feedback
+  bool _isLoadingStream = false;
   String _errorMessage = '';
-  int _retryCount = 0;
-  static const int _maxRetries = 3;
+  bool _isStreamActive = false;
+
+  // Key for rebuilding the MJPEG widget
+  Key _mjpegKey = UniqueKey();
 
   @override
   void initState() {
     super.initState();
-    // Automatically start streaming when the screen initializes.
-    _startStreaming(streamUrl);
-  }
-
-  /// Initiates the streaming process from the provided URL.
-  Future<void> _startStreaming(String url) async {
-    // Reset state and prepare for new stream.
-    setState(() {
-      _isLoadingStream = true;
-      _errorMessage = '';
-      _retryCount = 0; // Reset retry count
-      _imageStreamController?.close(); // Close any previous stream.
-      _imageStreamController = StreamController<Uint8List>();
-      _streamClient?.close(); // Close any previous HTTP client.
-      _streamClient = http.Client();
-    });
-
-    try {
-      // Create an HTTP GET request to the specified URL.
-      _streamRequest = http.Request('GET', Uri.parse(url));
-      final http.StreamedResponse response = await _streamClient!.send(
-        _streamRequest!,
-      );
-
-      // Check if the connection was successful (HTTP 200 OK).
-      if (response.statusCode == 200) {
-        // Extract the MJPEG boundary from the Content-Type header.
-        final contentType = response.headers['content-type'];
-        String boundary = 'frame'; // Default boundary if not specified.
-        if (contentType != null && contentType.contains('boundary=')) {
-          boundary = contentType.split('boundary=')[1].trim();
-        }
-
-        // Encode the boundary strings for byte-level comparison.
-        final boundaryBytes = utf8.encode('\r\n--$boundary');
-        final startBoundaryBytes = utf8.encode('--$boundary');
-        final doubleNewlineBytes = utf8.encode(
-          '\r\n\r\n',
-        ); // Separates headers from image data.
-
-        List<int> buffer = []; // Buffer to accumulate incoming bytes.
-
-        // Listen to the incoming byte stream from the HTTP response.
-        _responseSubscription = response.stream.listen(
-          (List<int> chunk) {
-            buffer.addAll(chunk); // Add new chunk to the buffer.
-
-            // Continuously process the buffer to extract full JPEG frames.
-            while (true) {
-              int currentBoundaryIndex = -1;
-
-              // Try to find the initial boundary or subsequent boundaries.
-              if (buffer.length >= startBoundaryBytes.length &&
-                  _indexOfBytes(
-                        buffer.sublist(0, startBoundaryBytes.length),
-                        startBoundaryBytes,
-                      ) !=
-                      -1) {
-                currentBoundaryIndex = _indexOfBytes(
-                  buffer,
-                  startBoundaryBytes,
-                );
-              } else {
-                currentBoundaryIndex = _indexOfBytes(buffer, boundaryBytes);
-              }
-
-              if (currentBoundaryIndex == -1) {
-                // No full boundary found yet, wait for more data.
-                break;
-              }
-
-              // Calculate the start of the headers after the current boundary.
-              int headersStartIndex =
-                  currentBoundaryIndex +
-                  (currentBoundaryIndex ==
-                          _indexOfBytes(buffer, startBoundaryBytes)
-                      ? startBoundaryBytes.length
-                      : boundaryBytes.length);
-
-              // Find the `\r\n\r\n` sequence that marks the end of headers and start of image data.
-              int headerEndIndex = _indexOfBytes(
-                buffer.sublist(headersStartIndex),
-                doubleNewlineBytes,
-              );
-
-              if (headerEndIndex == -1) {
-                // Headers not fully received yet, wait for more data.
-                break;
-              }
-
-              // Calculate the actual start of the JPEG image data.
-              int imageStartIndex =
-                  headersStartIndex +
-                  headerEndIndex +
-                  doubleNewlineBytes.length;
-
-              // Look for the NEXT boundary to determine where the current JPEG image ends.
-              int nextBoundaryIndex = _indexOfBytes(
-                buffer.sublist(imageStartIndex),
-                boundaryBytes,
-              );
-
-              if (nextBoundaryIndex == -1) {
-                // The next boundary is not yet in the buffer, meaning the current image
-                // might not be fully received. Wait for more data.
-                break;
-              }
-
-              // Extract the JPEG bytes for the current frame.
-              Uint8List jpegBytes = Uint8List.fromList(
-                buffer.sublist(
-                  imageStartIndex,
-                  imageStartIndex + nextBoundaryIndex,
-                ),
-              );
-
-              // Add the decoded JPEG image to the stream controller for UI update.
-              _imageStreamController?.add(jpegBytes);
-
-              // Remove the processed frame (including its boundary and headers) from the buffer.
-              buffer = buffer.sublist(imageStartIndex + nextBoundaryIndex);
-            }
-          },
-          // Error handling for the stream.
-          onError: (error) {
-            debugPrint('Stream error: $error');
-            if (mounted) {
-              setState(() {
-                _errorMessage = 'Stream error: $error';
-                _isLoadingStream = false;
-              });
-            }
-            _imageStreamController?.close();
-          },
-          // Called when the stream finishes (e.g., server closes connection).
-          onDone: () {
-            debugPrint('Stream finished.');
-            if (mounted) {
-              setState(() {
-                _isLoadingStream = false;
-              });
-            }
-            _imageStreamController?.close();
-          },
-        );
-      } else {
-        // Handle non-200 HTTP status codes.
-        if (mounted) {
-          setState(() {
-            _errorMessage =
-                'Failed to connect: ${response.statusCode} ${response.reasonPhrase}';
-            _isLoadingStream = false;
-          });
-        }
-        _imageStreamController?.close();
-      }
-    } catch (e) {
-      // Catch any network or parsing errors.
-      debugPrint('Error sending request: $e');
-
-      // Implement retry logic for connection failures
-      if (_retryCount < _maxRetries) {
-        _retryCount++;
-        debugPrint('Retrying connection... Attempt $_retryCount/$_maxRetries');
-        debugPrint('Error details: $e');
-        await Future.delayed(
-          Duration(seconds: _retryCount * 2),
-        ); // Exponential backoff
-        if (mounted) {
-          _startStreaming(url); // Retry
-        }
-        return;
-      }
-
-      if (mounted) {
-        setState(() {
-          _errorMessage =
-              'Error connecting: $e${_retryCount >= _maxRetries ? ' (Max retries reached)' : ''}';
-          _isLoadingStream = false;
-        });
-      }
-      _imageStreamController?.close();
-    }
-  }
-
-  /// Helper function to find a sequence of bytes within another list of bytes.
-  /// Used for finding MJPEG boundaries and header delimiters.
-  int _indexOfBytes(List<int> source, List<int> target) {
-    if (target.isEmpty) return 0;
-    if (source.isEmpty || target.length > source.length) return -1;
-
-    for (int i = 0; i <= source.length - target.length; i++) {
-      bool found = true;
-      for (int j = 0; j < target.length; j++) {
-        if (source[i + j] != target[j]) {
-          found = false;
-          break;
-        }
-      }
-      if (found) return i;
-    }
-    return -1;
-  }
-
-  /// Stops the active camera stream and cleans up resources.
-  void _stopStreaming() {
-    _responseSubscription?.cancel(); // Cancel the stream subscription.
-    _imageStreamController?.close(); // Close the image stream controller.
-    _streamClient?.close(); // Close the HTTP client.
-    if (mounted) {
-      setState(() {
-        _isLoadingStream = false;
-        _imageStreamController = null;
-        _streamClient = null;
-        _errorMessage = '';
-        _retryCount = 0;
-      });
-    }
+    // Test connectivity and start streaming
+    _testAndStartStreaming();
   }
 
   @override
   void dispose() {
-    _stopStreaming(); // Ensure resources are cleaned up when the widget is disposed.
+    // No manual cleanup needed for flutter_mjpeg
     super.dispose();
+  }
+
+  /// Refresh the MJPEG stream
+  void _refreshStream() {
+    setState(() {
+      _mjpegKey = UniqueKey(); // This will force rebuild of the Mjpeg widget
+      _errorMessage = '';
+    });
+  }
+
+  /// Test connectivity and start streaming
+  Future<void> _testAndStartStreaming() async {
+    setState(() {
+      _isLoadingStream = true;
+      _errorMessage = '';
+    });
+
+    debugPrint('🚀 Testing connectivity to camera server...');
+
+    // Test if the camera server is running
+    bool serverRunning = await _testConnectivity(streamUrl);
+
+    if (!serverRunning) {
+      debugPrint(
+        'Primary connectivity test failed, trying alternative method...',
+      );
+      serverRunning = await _testConnectivityAlternative(
+        'http://$_raspberryPiIP:8080',
+      );
+    }
+
+    if (serverRunning) {
+      debugPrint('✅ Server is reachable, stream ready');
+      setState(() {
+        _isLoadingStream = false;
+        _isStreamActive = true;
+        _errorMessage = '';
+      });
+    } else {
+      debugPrint(
+        '❌ Server not reachable, attempting to start remote camera...',
+      );
+      // Try to start the camera on the server
+      await _startRemoteCamera();
+
+      // Wait a bit for the camera to start
+      await Future.delayed(const Duration(seconds: 3));
+
+      // Try again
+      bool retryResult = await _testConnectivity(streamUrl);
+      if (retryResult) {
+        debugPrint('✅ Camera started successfully');
+        setState(() {
+          _isLoadingStream = false;
+          _isStreamActive = true;
+          _errorMessage = '';
+        });
+      } else {
+        debugPrint('❌ Unable to establish connection after retry');
+        setState(() {
+          _isLoadingStream = false;
+          _isStreamActive = false;
+          _errorMessage =
+              'Unable to connect to camera server.\n'
+              'Please verify:\n'
+              '• Camera server is running on Raspberry Pi\n'
+              '• IP address $_raspberryPiIP is correct\n'
+              '• Port 8080 is accessible\n'
+              '• Both devices are on same network';
+        });
+      }
+    }
+  }
+
+  /// Test basic connectivity to the server
+  Future<bool> _testConnectivity(String url) async {
+    try {
+      debugPrint('Testing basic connectivity to: $url');
+
+      final client = http.Client();
+      try {
+        final response = await client
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 10));
+
+        debugPrint('Test response status: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          debugPrint('✅ Successfully connected to camera server');
+          return true;
+        } else {
+          debugPrint('❌ Server responded with status: ${response.statusCode}');
+          return false;
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('❌ Connectivity test failed: $e');
+      return false;
+    }
+  }
+
+  /// Alternative connectivity test using different endpoints
+  Future<bool> _testConnectivityAlternative(String baseUrl) async {
+    try {
+      debugPrint('Testing alternative connectivity to base URL: $baseUrl');
+
+      final endpoints = [
+        '$baseUrl/',
+        '$baseUrl/my_mac_camera', // Test the actual stream endpoint
+        '$baseUrl/health',
+        '$baseUrl/camera/status',
+      ];
+
+      for (String endpoint in endpoints) {
+        try {
+          debugPrint('Trying endpoint: $endpoint');
+          final client = http.Client();
+
+          try {
+            final response = await client
+                .get(Uri.parse(endpoint))
+                .timeout(const Duration(seconds: 8));
+
+            debugPrint('Response status for $endpoint: ${response.statusCode}');
+            debugPrint('Content-Type: ${response.headers['content-type']}');
+
+            if (response.statusCode == 200) {
+              debugPrint('✅ Successfully connected to: $endpoint');
+
+              // If this is the camera endpoint, check if it's actually streaming
+              if (endpoint.contains('/my_mac_camera')) {
+                final contentType = response.headers['content-type'];
+                if (contentType != null &&
+                    contentType.contains('multipart/x-mixed-replace')) {
+                  debugPrint('✅ MJPEG stream endpoint confirmed working');
+                  return true;
+                } else {
+                  debugPrint(
+                    '⚠️ Endpoint exists but may not be streaming MJPEG',
+                  );
+                }
+              }
+              return true;
+            }
+          } finally {
+            client.close();
+          }
+        } catch (e) {
+          debugPrint('Failed to connect to $endpoint: $e');
+          continue;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('❌ Alternative connectivity test failed: $e');
+      return false;
+    }
+  }
+
+  /// Start the camera remotely
+  Future<void> _startRemoteCamera() async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('http://$_raspberryPiIP:8080/camera/start'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        debugPrint('Camera started remotely');
+      } else {
+        debugPrint('Failed to start remote camera: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Error starting remote camera: $e');
+    }
+  }
+
+  /// Get camera status
+  Future<Map<String, dynamic>?> getCameraStatus() async {
+    try {
+      final response = await http
+          .get(Uri.parse('http://$_raspberryPiIP:8080/camera/status'))
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+    } catch (e) {
+      debugPrint('Error getting camera status: $e');
+    }
+    return null;
   }
 
   @override
@@ -339,117 +290,8 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   color: Colors.black,
-                  alignment: Alignment.center, // Center the content
-                  child: _imageStreamController == null || _isLoadingStream
-                      ? Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (_isLoadingStream)
-                              const CircularProgressIndicator(
-                                color: Colors.white54,
-                              ),
-                            if (_isLoadingStream) const SizedBox(height: 16),
-                            Icon(
-                              Icons.videocam,
-                              size: 64,
-                              color: Colors.white54,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              _isLoadingStream
-                                  ? 'Connecting to Live Camera Feed...'
-                                  : 'Live Camera Feed',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                              ),
-                            ),
-                            Text(
-                              streamUrl,
-                              style: const TextStyle(
-                                color: Colors.white54,
-                                fontSize: 12,
-                              ),
-                            ),
-                            if (_errorMessage.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 10.0),
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      _errorMessage,
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 14,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    ElevatedButton.icon(
-                                      onPressed: () =>
-                                          _startStreaming(streamUrl),
-                                      icon: const Icon(Icons.refresh),
-                                      label: const Text('Retry Connection'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.blue,
-                                        foregroundColor: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        )
-                      : StreamBuilder<Uint8List>(
-                          stream: _imageStreamController!.stream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData) {
-                              // Display the image from the received bytes.
-                              return Image.memory(
-                                snapshot.data!,
-                                fit: BoxFit
-                                    .contain, // Adjusts image to fit within bounds.
-                                gaplessPlayback:
-                                    true, // Prevents flickering between frames.
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Icon(
-                                    Icons.broken_image,
-                                    color: Colors.red,
-                                    size: 80,
-                                  );
-                                },
-                              );
-                            } else if (snapshot.hasError) {
-                              // Display error if stream encounters one.
-                              return Text(
-                                'Error receiving image: ${snapshot.error}',
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 16,
-                                ),
-                                textAlign: TextAlign.center,
-                              );
-                            } else {
-                              // Placeholder while waiting for the first frame.
-                              return const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  CircularProgressIndicator(
-                                    color: Colors.white54,
-                                  ),
-                                  SizedBox(height: 10),
-                                  Text(
-                                    'Waiting for stream data...',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.white54,
-                                    ),
-                                  ),
-                                ],
-                              );
-                            }
-                          },
-                        ),
+                  alignment: Alignment.center,
+                  child: _buildVideoWidget(),
                 ),
               ),
             ),
@@ -472,9 +314,11 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
                       leading: const Icon(Icons.task_alt, color: Colors.blue),
                       title: const Text('Current Task'),
                       subtitle: Text(currentTask),
-                      trailing: const Icon(
-                        Icons.refresh,
-                      ), // Placeholder for refresh, could trigger a status update
+                      trailing: IconButton(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: _refreshStream,
+                        tooltip: 'Refresh Camera Stream',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -487,7 +331,7 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
                           onPressed: () => _toggleEmergencyStop(),
                           icon: Icon(
                             isEmergencyStop ? Icons.play_arrow : Icons.stop,
-                          ), // Change icon based on state
+                          ),
                           label: Text(
                             isEmergencyStop ? 'Resume' : 'Emergency Stop',
                             style: const TextStyle(color: Colors.white),
@@ -531,6 +375,162 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _refreshStream,
+        tooltip: 'Refresh Stream',
+        backgroundColor: Colors.green,
+        child: const Icon(Icons.refresh, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _buildVideoWidget() {
+    if (_isLoadingStream) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(color: Colors.white54),
+          const SizedBox(height: 16),
+          const Icon(Icons.videocam, size: 64, color: Colors.white54),
+          const SizedBox(height: 16),
+          const Text(
+            'Connecting to Live Camera Feed...',
+            style: TextStyle(color: Colors.white, fontSize: 18),
+          ),
+          Text(
+            streamUrl,
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+        ],
+      );
+    }
+
+    if (_errorMessage.isNotEmpty) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.videocam_off, size: 64, color: Colors.white54),
+          const SizedBox(height: 16),
+          const Text(
+            'Camera Connection Failed',
+            style: TextStyle(color: Colors.white, fontSize: 18),
+          ),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              _errorMessage,
+              style: const TextStyle(color: Colors.red, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _testAndStartStreaming,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry Connection'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_isStreamActive) {
+      debugPrint('🎥 Attempting to display MJPEG stream: $streamUrl');
+      return Mjpeg(
+        key: _mjpegKey,
+        isLive: true,
+        stream: streamUrl,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.contain,
+        loading: (context) => const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.white54),
+              SizedBox(height: 10),
+              Text(
+                'Loading video stream...',
+                style: TextStyle(color: Colors.white54, fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+        error: (context, error, stack) {
+          debugPrint('🚨 MJPEG Stream Error: $error');
+          debugPrint('Stack trace: $stack');
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.broken_image, color: Colors.red, size: 80),
+                const SizedBox(height: 16),
+                const Text(
+                  'Stream Error',
+                  style: TextStyle(color: Colors.red, fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    'Error: $error',
+                    style: const TextStyle(color: Colors.red, fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'URL: $streamUrl',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _refreshStream,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+        timeout: const Duration(seconds: 15), // Increased timeout
+      );
+    }
+
+    // Default state
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.videocam, size: 64, color: Colors.white54),
+        const SizedBox(height: 16),
+        const Text(
+          'Live Camera Feed',
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
+        Text(
+          streamUrl,
+          style: const TextStyle(color: Colors.white54, fontSize: 12),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: _testAndStartStreaming,
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Start Stream'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
     );
   }
 
@@ -538,15 +538,13 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
     setState(() {
       isEmergencyStop = !isEmergencyStop;
       robotStatus = isEmergencyStop ? 'Stopped' : 'Active';
-      currentTask = isEmergencyStop
-          ? 'None'
-          : 'Scanning for weeds'; // Reset task if resumed
+      currentTask = isEmergencyStop ? 'None' : 'Scanning for weeds';
     });
 
     // Send control command to robot
     try {
       final response = await http.post(
-        Uri.parse(controlUrl), // Use the defined controlUrl
+        Uri.parse(controlUrl),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'action': isEmergencyStop ? 'stop' : 'resume'}),
       );
@@ -565,12 +563,12 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
   void _returnToBase() async {
     setState(() {
       currentTask = 'Returning to base station';
-      robotStatus = 'Returning'; // Update status when returning to base
+      robotStatus = 'Returning';
     });
 
     try {
       final response = await http.post(
-        Uri.parse(controlUrl), // Use the defined controlUrl
+        Uri.parse(controlUrl),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'action': 'return_home'}),
       );

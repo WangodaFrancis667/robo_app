@@ -1,316 +1,727 @@
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 
-class RobotControlScreen extends StatefulWidget {
-  const RobotControlScreen({super.key});
+import 'package:flutter/material.dart';
+import 'services/bluetoth_service.dart';
+
+// Import all components
+import 'components/bluetooth_section.dart';
+import 'components/video_feed_section.dart';
+import 'components/control_mode_selector.dart';
+import 'components/quick_actions_section.dart';
+import 'components/speed_control_section.dart';
+import 'components/joystick_control_section.dart';
+import 'components/pose_control_section.dart';
+import 'components/servo_control_section.dart';
+
+// Import all services
+import 'services/video_service.dart';
+import 'services/robot_control_service.dart';
+import 'services/orientation_service.dart';
+
+// Control mode selection
+enum ControlMode { driving, armControl }
+
+class RobotControllerApp extends StatelessWidget {
+  final Function(bool)? onConnectionStatusChanged;
+
+  const RobotControllerApp({super.key, this.onConnectionStatusChanged});
 
   @override
-  RobotControlScreenState createState() => RobotControlScreenState();
+  Widget build(BuildContext context) {
+    return RobotControllerScreen(
+      onConnectionStatusChanged: onConnectionStatusChanged,
+    );
+  }
 }
 
-class RobotControlScreenState extends State<RobotControlScreen> {
-  bool isManualMode = false;
-  double speed = 10.0;
+class RobotControllerScreen extends StatefulWidget {
+  final Function(bool)? onConnectionStatusChanged;
+
+  const RobotControllerScreen({super.key, this.onConnectionStatusChanged});
+
+  @override
+  State<RobotControllerScreen> createState() => _RobotControllerScreenState();
+}
+
+class _RobotControllerScreenState extends State<RobotControllerScreen> {
+  // Services
+  late VideoService _videoService;
+
+  // Video initialization state
+  bool _isVideoInitialized = false;
+  bool _isVideoInitializing = false;
+
+  // Bluetooth
+  BluetoothConnection? connection;
+  bool isConnecting = false;
+  bool isConnected = false;
+  List<BluetoothDevice> bondedDevices = [];
+  BluetoothDevice? selectedDevice;
+
+  // Robot control
+  List<double> servoAngles = [90, 90, 90, 90, 90, 90];
+  List<String> servoNames = RobotControlService.defaultServoNames;
+  List<String> poses = RobotControlService.defaultPoses;
+  int leftMotorSpeed = 0;
+  int rightMotorSpeed = 0;
+
+  // Enhanced controls
+  int globalSpeedMultiplier = 80; // Global speed control (20-100%)
+  bool motorDiagnostics = true;
+
+  // Control mode selection
+  ControlMode _currentControlMode = ControlMode.driving;
+
+  // Timers
+  Timer? _servoTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize services
+    _videoService = VideoService();
+
+    // Start in portrait mode for Bluetooth connection
+    OrientationService.switchToPortraitMode();
+    _initializeBluetooth();
+    // Don't initialize video feed until Bluetooth is connected
+    // _initializeVideoFeed();
+  }
+
+  @override
+  void dispose() {
+    _connectionMonitor?.cancel();
+    _servoTimer?.cancel();
+    connection?.close();
+    // Restore all orientations when leaving the screen
+    OrientationService.restoreAllOrientations();
+    super.dispose();
+  }
+
+  Future<void> _initializeBluetooth() async {
+    try {
+      // Request permissions using cross-platform service
+      bool permissionsGranted =
+          await CrossPlatformBluetoothService.requestPermissions();
+
+      if (!permissionsGranted) {
+        _showSnackBar('Bluetooth permissions are required for this app');
+        return;
+      }
+
+      bool isEnabled = await CrossPlatformBluetoothService.isBluetoothEnabled();
+      if (!isEnabled) {
+        try {
+          await CrossPlatformBluetoothService.enableBluetooth();
+        } catch (e) {
+          _showSnackBar('Please enable Bluetooth: $e');
+          return;
+        }
+      }
+
+      List<BluetoothDevice> devices =
+          await CrossPlatformBluetoothService.getDevices();
+      setState(() {
+        bondedDevices = devices;
+      });
+    } catch (e) {
+      _showSnackBar('Error initializing Bluetooth: $e');
+    }
+  }
+
+  // Video feed methods
+  Future<void> _initializeVideoFeed() async {
+    if (_isVideoInitialized || _isVideoInitializing) {
+      return; // Prevent multiple initializations
+    }
+
+    setState(() {
+      _isVideoInitializing = true;
+    });
+
+    try {
+      // Try auto-discovery first, then fallback to configured server
+      await _videoService.initializeVideoFeedWithDiscovery();
+
+      setState(() {
+        _isVideoInitialized = true;
+        _isVideoInitializing = false;
+      });
+    } catch (e) {
+      print('Video initialization error: $e');
+      setState(() {
+        _isVideoInitializing = false;
+      });
+      // Don't set _isVideoInitialized = true on error
+    }
+  }
+
+  void _refreshVideoStream() {
+    setState(() {
+      _isVideoInitialized = false;
+      _isVideoInitializing = false;
+    });
+    _videoService.refreshVideoStream();
+    _initializeVideoFeed();
+  }
+
+  void _switchControlMode(ControlMode mode) {
+    setState(() {
+      _currentControlMode = mode;
+    });
+  }
+
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    setState(() {
+      isConnecting = true;
+      selectedDevice = device;
+    });
+
+    try {
+      _showSnackBar('Connecting to ${device.name}...');
+
+      connection = await CrossPlatformBluetoothService.connectToDevice(device);
+
+      setState(() {
+        isConnected = true;
+        isConnecting = false;
+      });
+
+      // Notify parent about connection status change
+      if (widget.onConnectionStatusChanged != null) {
+        widget.onConnectionStatusChanged!(true);
+      }
+
+      _showSnackBar('Connected to ${device.name}');
+
+      // Switch to landscape mode for robot control
+      OrientationService.switchToLandscapeMode();
+
+      // Set initial configuration
+      await Future.delayed(Duration(milliseconds: 500));
+      _sendCommand(
+        RobotControlService.globalSpeedCommand(globalSpeedMultiplier),
+      );
+      await Future.delayed(Duration(milliseconds: 100));
+      _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
+
+      // Start monitoring connection
+      _startConnectionMonitoring();
+
+      // Initialize video feed AFTER Bluetooth connection is fully established
+      _showSnackBar('Initializing camera connection...');
+      await _initializeVideoFeed();
+      _showSnackBar('Camera connection initialized');
+    } catch (e) {
+      setState(() {
+        isConnecting = false;
+        isConnected = false;
+        connection = null;
+        selectedDevice = null;
+      });
+      _showSnackBar('Connection failed: ${e.toString()}');
+      print('Connection error: $e');
+      // Ensure we stay in portrait mode if connection fails
+      OrientationService.switchToPortraitMode();
+    }
+  }
+
+  Timer? _connectionMonitor;
+
+  void _startConnectionMonitoring() {
+    _connectionMonitor?.cancel();
+    _connectionMonitor = Timer.periodic(Duration(seconds: 5), (timer) {
+      if (connection != null && isConnected) {
+        // Send a ping command to check if connection is still alive
+        try {
+          _sendCommand('PING');
+        } catch (e) {
+          print('Connection monitoring failed: $e');
+          _handleConnectionLost();
+          timer.cancel();
+        }
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  void _handleConnectionLost() {
+    if (mounted) {
+      setState(() {
+        isConnected = false;
+        connection = null;
+        selectedDevice = null;
+        // Reset video state when connection is lost
+        _isVideoInitialized = false;
+        _isVideoInitializing = false;
+      });
+
+      // Notify parent about connection status change
+      if (widget.onConnectionStatusChanged != null) {
+        widget.onConnectionStatusChanged!(false);
+      }
+
+      _showSnackBar('Connection lost to robot');
+      // Switch back to portrait mode when connection is lost
+      OrientationService.switchToPortraitMode();
+    }
+  }
+
+  Future<void> _disconnect() async {
+    if (connection != null) {
+      _connectionMonitor?.cancel();
+      await connection!.close();
+      setState(() {
+        isConnected = false;
+        connection = null;
+        selectedDevice = null;
+        // Reset video state when disconnecting
+        _isVideoInitialized = false;
+        _isVideoInitializing = false;
+      });
+
+      // Notify parent about connection status change
+      if (widget.onConnectionStatusChanged != null) {
+        widget.onConnectionStatusChanged!(false);
+      }
+
+      _showSnackBar('Disconnected');
+      // Switch back to portrait mode when manually disconnecting
+      OrientationService.switchToPortraitMode();
+    }
+  }
+
+  void _sendCommand(String command) {
+    if (connection != null && isConnected) {
+      try {
+        // Skip ping commands from being logged
+        if (command != 'PING') {
+          print('Sending: $command');
+        }
+
+        connection!.write(utf8.encode('$command\n'));
+      } catch (e) {
+        print('Error sending command "$command": $e');
+        _showSnackBar('Communication error: ${e.toString()}');
+
+        // If we can't send commands, the connection is probably lost
+        _handleConnectionLost();
+      }
+    } else {
+      if (command != 'PING') {
+        // Don't show error for ping commands
+        _showSnackBar('Not connected to robot');
+      }
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  void _updateServoAngle(int servoId, double angle) {
+    setState(() {
+      servoAngles[servoId] = angle;
+    });
+
+    // Debounce servo commands to reduce spam
+    _servoTimer?.cancel();
+    _servoTimer = Timer(Duration(milliseconds: 100), () {
+      _sendCommand(RobotControlService.servoCommand(servoId, angle.round()));
+    });
+  }
+
+  void _setPose(String pose) {
+    _sendCommand(RobotControlService.poseCommand(pose));
+  }
+
+  void _updateGlobalSpeed(int speed) {
+    setState(() {
+      globalSpeedMultiplier = speed;
+    });
+    _sendCommand(RobotControlService.globalSpeedCommand(speed));
+  }
+
+  void _toggleDiagnostics() {
+    setState(() {
+      motorDiagnostics = !motorDiagnostics;
+    });
+    _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
+  }
+
+  void _testMotors() {
+    _sendCommand(RobotControlService.motorTestCommand());
+    _showSnackBar('Running motor test sequence...');
+  }
+
+  void _getStatus() {
+    _sendCommand(RobotControlService.statusCommand());
+  }
+
+  void _updateMotorSpeeds(int left, int right) {
+    setState(() {
+      leftMotorSpeed = left;
+      rightMotorSpeed = right;
+    });
+    _sendCommand(RobotControlService.tankDriveCommand(left, right));
+  }
+
+  void _homeRobot() {
+    _sendCommand(RobotControlService.homeCommand());
+    setState(() {
+      servoAngles = [90, 90, 90, 90, 90, 90];
+      leftMotorSpeed = 0;
+      rightMotorSpeed = 0;
+    });
+  }
+
+  void _emergencyStop() {
+    _sendCommand(RobotControlService.emergencyStopCommand());
+    setState(() {
+      leftMotorSpeed = 0;
+      rightMotorSpeed = 0;
+    });
+  }
+
+  void _showConnectionTips() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('ESP32 Connection Tips'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text(
+                  'If you\'re having trouble connecting to your ESP32:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 12),
+                Text('1. Ensure ESP32 is powered on and running'),
+                SizedBox(height: 8),
+                Text('2. Check that Bluetooth is enabled on ESP32'),
+                SizedBox(height: 8),
+                Text('3. Verify device is paired in Android settings'),
+                SizedBox(height: 8),
+                Text('4. Make sure ESP32 code has Serial Port Profile (SPP)'),
+                SizedBox(height: 8),
+                Text('5. Try restarting both devices'),
+                SizedBox(height: 8),
+                Text('6. Check ESP32 Serial Monitor for connection status'),
+                SizedBox(height: 12),
+                Text(
+                  'ESP32 Code Requirements:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text('• Include BluetoothSerial library'),
+                SizedBox(height: 4),
+                Text('• Set device name (e.g., "ESP32_Robot")'),
+                SizedBox(height: 4),
+                Text('• Enable pairing and discoverable mode'),
+                SizedBox(height: 4),
+                Text('• Handle incoming serial commands'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _onCameraServerDiscovered(CameraServer server) {
+    print('🎯 Camera server discovered: ${server.url}');
+
+    setState(() {
+      _videoService = _videoService.createFromDiscoveredServer(server);
+    });
+
+    _initializeVideoFeed();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Connected to camera server at ${server.ip}:${server.port}',
+        ),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  Widget _buildVideoFeedWidget() {
+    if (!_isVideoInitialized && !_isVideoInitializing) {
+      // Show waiting state before video initialization
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          children: [
+            // Video header
+            Container(
+              padding: const EdgeInsets.all(8),
+              color: Colors.grey.shade900,
+              child: Row(
+                children: [
+                  const Icon(Icons.videocam, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Live Camera Feed',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'WAITING',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Waiting content
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.hourglass_empty,
+                        size: 48,
+                        color: Colors.white54,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Waiting for Bluetooth Connection',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Camera will initialize after robot connection',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Return the actual video feed section
+    return VideoFeedSection(
+      streamUrl: _videoService.streamUrl,
+      isLoadingStream: _videoService.isLoadingStream || _isVideoInitializing,
+      errorMessage: _videoService.errorMessage,
+      isStreamActive: _videoService.isStreamActive,
+      mjpegKey: _videoService.mjpegKey,
+      onRefreshVideoStream: _refreshVideoStream,
+      onCameraServerDiscovered: _onCameraServerDiscovered,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Robot Controls'),
-        backgroundColor: Colors.blue,
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              //mode selection
-              Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Control Mode',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      SwitchListTile(
-                        title: Text('Manual Control'),
-                        subtitle: Text(
-                          isManualMode
-                              ? 'Manual Navigation enabled'
-                              : 'Autonomous mode active',
-                        ),
-                        value: isManualMode,
-                        onChanged: (value) {
-                          setState(() => isManualMode = value);
-                          _sendControlMode(value);
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              SizedBox(height: 20),
-
-              // Speed Control
-              Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Speed Control',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      Slider(
-                        value: speed,
-                        min: 0,
-                        max: 100,
-                        divisions: 20,
-                        label: '${speed.round()}%',
-                        onChanged: (value) {
-                          setState(() => speed = value);
-                          _sendSpeedControl(value);
-                        },
-                      ),
-                      Text('Current Speed: ${speed.round()}%'),
-                    ],
-                  ),
-                ),
-              ),
-
-              SizedBox(height: 20),
-
-              // Manual Navigation Controls
-              if (isManualMode) ...[
-                Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Column(
+        title: isConnected
+            ? Row(
+                children: [
+                  const Text('🤖 Robot Controller'),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade600,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          'Manual Navigation',
-                          style: Theme.of(context).textTheme.headlineSmall,
+                        const Icon(
+                          Icons.bluetooth_connected,
+                          color: Colors.white,
+                          size: 16,
                         ),
-                        SizedBox(height: 20),
-
-                        // Direction Controls
-                        Column(
-                          children: [
-                            // Forward
-                            GestureDetector(
-                              onTapDown: (_) => _sendDirection('forward'),
-                              onTapUp: (_) => _sendDirection('stop'),
-                              child: Container(
-                                width: 80,
-                                height: 80,
-                                decoration: BoxDecoration(
-                                  color: Colors.blue,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.keyboard_arrow_up,
-                                  color: Colors.white,
-                                  size: 40,
-                                ),
-                              ),
-                            ),
-
-                            SizedBox(height: 20),
-
-                            // Left, Stop, Right
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                GestureDetector(
-                                  onTapDown: (_) => _sendDirection('left'),
-                                  onTapUp: (_) => _sendDirection('stop'),
-                                  child: Container(
-                                    width: 80,
-                                    height: 80,
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.keyboard_arrow_left,
-                                      color: Colors.white,
-                                      size: 40,
-                                    ),
-                                  ),
-                                ),
-
-                                GestureDetector(
-                                  onTap: () => _sendDirection('stop'),
-                                  child: Container(
-                                    width: 80,
-                                    height: 80,
-                                    decoration: BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.stop,
-                                      color: Colors.white,
-                                      size: 40,
-                                    ),
-                                  ),
-                                ),
-
-                                GestureDetector(
-                                  onTapDown: (_) => _sendDirection('right'),
-                                  onTapUp: (_) => _sendDirection('stop'),
-                                  child: Container(
-                                    width: 80,
-                                    height: 80,
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.keyboard_arrow_right,
-                                      color: Colors.white,
-                                      size: 40,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            SizedBox(height: 20),
-
-                            // Backward
-                            GestureDetector(
-                              onTapDown: (_) => _sendDirection('backward'),
-                              onTapUp: (_) => _sendDirection('stop'),
-                              child: Container(
-                                width: 80,
-                                height: 80,
-                                decoration: BoxDecoration(
-                                  color: Colors.blue,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.keyboard_arrow_down,
-                                  color: Colors.white,
-                                  size: 40,
-                                ),
-                              ),
-                            ),
-                          ],
+                        const SizedBox(width: 4),
+                        Text(
+                          selectedDevice?.name ?? 'Robot',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
                   ),
+                ],
+              )
+            : const Text('🤖 Robot Controller'),
+        elevation: 0,
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          if (isConnected) ...[
+            // Show device address as a chip in the actions
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade300),
+              ),
+              child: Text(
+                selectedDevice?.address ?? 'Unknown',
+                style: TextStyle(
+                  color: Colors.green.shade700,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
                 ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: _getStatus,
+              tooltip: 'Get Status',
+            ),
+          ],
+          IconButton(
+            icon: Icon(
+              isConnected ? Icons.bluetooth_connected : Icons.bluetooth,
+              color: isConnected ? Colors.green : null,
+            ),
+            onPressed: isConnected ? _disconnect : null,
+            tooltip: isConnected ? 'Disconnect' : 'Bluetooth',
+          ),
+          IconButton(
+            icon: const Icon(Icons.videocam),
+            onPressed: _refreshVideoStream,
+            tooltip: 'Refresh Video',
+          ),
+        ],
+      ),
+      body: !isConnected
+          ? BluetoothConnectionSection(
+              bondedDevices: bondedDevices,
+              isConnecting: isConnecting,
+              selectedDevice: selectedDevice,
+              onRefreshDevices: _initializeBluetooth,
+              onShowConnectionTips: _showConnectionTips,
+              onConnectToDevice: _connectToDevice,
+              onCameraServerDiscovered: _onCameraServerDiscovered,
+            )
+          : Row(
+              children: [
+                // Left side - Video Feed
+                Expanded(flex: 1, child: _buildVideoFeedWidget()),
 
-                SizedBox(height: 20),
-
-                // Arm Controls
-                Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
+                // Right side - Controls
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    constraints: const BoxConstraints.expand(),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          'Mechanical Arm Controls',
-                          style: Theme.of(context).textTheme.headlineSmall,
+                        // Control mode selector
+                        ControlModeSelectorSection(
+                          currentControlMode: _currentControlMode,
+                          onControlModeChanged: _switchControlMode,
                         ),
-                        SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => _sendArmCommand('activate'),
-                                icon: Icon(Icons.build),
-                                label: Text(
-                                  'Activate Weeding',
-                                  style: TextStyle(color: Colors.white),
+
+                        // Scrollable controls
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(8),
+                            physics: const BouncingScrollPhysics(),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                QuickActionsSection(
+                                  onHomeRobot: _homeRobot,
+                                  onEmergencyStop: _emergencyStop,
+                                  onTestMotors: _testMotors,
+                                  onToggleDiagnostics: _toggleDiagnostics,
+                                  motorDiagnostics: motorDiagnostics,
                                 ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                ),
-                              ),
+                                const SizedBox(height: 12),
+                                if (_currentControlMode ==
+                                    ControlMode.driving) ...[
+                                  SpeedControlSection(
+                                    globalSpeedMultiplier:
+                                        globalSpeedMultiplier,
+                                    onSpeedChanged: _updateGlobalSpeed,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  JoystickControlSection(
+                                    leftMotorSpeed: leftMotorSpeed,
+                                    rightMotorSpeed: rightMotorSpeed,
+                                    onMotorSpeedsChanged: _updateMotorSpeeds,
+                                    onShowMessage: _showSnackBar,
+                                  ),
+                                ] else ...[
+                                  PoseControlSection(
+                                    poses: poses,
+                                    onSetPose: _setPose,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ServoControlSection(
+                                    servoAngles: servoAngles,
+                                    servoNames: servoNames,
+                                    onServoAngleChanged: _updateServoAngle,
+                                  ),
+                                ],
+                                // Add some bottom padding to ensure scrolling works properly
+                                const SizedBox(height: 20),
+                              ],
                             ),
-                            SizedBox(width: 16),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => _sendArmCommand('retract'),
-                                icon: Icon(Icons.back_hand),
-                                label: Text(
-                                  'Retract Arm',
-                                  style: TextStyle(color: Colors.white),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange,
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
               ],
-            ],
-          ),
-        ),
-      ),
+            ),
     );
-  }
-
-  void _sendControlMode(bool manual) async {
-    try {
-      await http.post(
-        Uri.parse('http://192.168.1.100:5000/control'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'mode': manual ? 'manual' : 'autonomous'}),
-      );
-    } catch (e) {
-      debugPrint('Error sending control mode: $e');
-    }
-  }
-
-  void _sendSpeedControl(double speed) async {
-    try {
-      await http.post(
-        Uri.parse('http://192.168.1.100:5000/control'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'speed': speed.round()}),
-      );
-    } catch (e) {
-      debugPrint('Error sending speed control: $e');
-    }
-  }
-
-  void _sendDirection(String direction) async {
-    try {
-      await http.post(
-        Uri.parse('http://192.168.1.100:5000/control'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'direction': direction}),
-      );
-    } catch (e) {
-      debugPrint('Error sending direction: $e');
-    }
-  }
-
-  void _sendArmCommand(String command) async {
-    try {
-      await http.post(
-        Uri.parse('http://192.168.1.100:5000/control'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'arm_action': command}),
-      );
-    } catch (e) {
-      debugPrint('Error sending arm command: $e');
-    }
   }
 }
