@@ -1,9 +1,9 @@
+// components/bluetooth_section.dart
 import 'package:flutter/material.dart';
 import '../services/bluetoth_service.dart';
 import '../services/video_service.dart';
-import 'camera_discovery_dialog.dart';
 
-class BluetoothConnectionSection extends StatelessWidget {
+class BluetoothConnectionSection extends StatefulWidget {
   final List<BluetoothDevice> bondedDevices;
   final bool isConnecting;
   final BluetoothDevice? selectedDevice;
@@ -16,7 +16,7 @@ class BluetoothConnectionSection extends StatelessWidget {
     super.key,
     required this.bondedDevices,
     required this.isConnecting,
-    required this.selectedDevice,
+    this.selectedDevice,
     required this.onRefreshDevices,
     required this.onShowConnectionTips,
     required this.onConnectToDevice,
@@ -24,271 +24,492 @@ class BluetoothConnectionSection extends StatelessWidget {
   });
 
   @override
+  State<BluetoothConnectionSection> createState() =>
+      _BluetoothConnectionSectionState();
+}
+
+class _BluetoothConnectionSectionState
+    extends State<BluetoothConnectionSection> {
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
             children: [
-              // App header for portrait mode
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Column(
+              Icon(
+                Icons.bluetooth,
+                size: 32,
+                color: Theme.of(context).primaryColor,
+              ),
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Connect to Robot',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Select your Arduino/ESP32 device',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: widget.onShowConnectionTips,
+                icon: const Icon(Icons.help_outline),
+                tooltip: 'Connection Tips',
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          // Connection status
+          if (widget.isConnecting) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Connecting...',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'Connecting to ${widget.selectedDevice?.name ?? "device"}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Device list header
+          Row(
+            children: [
+              const Text(
+                'Available Devices',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: widget.isConnecting ? null : widget.onRefreshDevices,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Refresh'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Device list
+          Expanded(
+            child: widget.bondedDevices.isEmpty
+                ? _buildEmptyState()
+                : _buildDeviceList(),
+          ),
+
+          // Footer information
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Icon(
-                      Icons.bluetooth,
-                      size: 64,
-                      color: Colors.blue.shade600,
-                    ),
-                    const SizedBox(height: 16),
+                    Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                    SizedBox(width: 8),
                     Text(
-                      '🤖 Robot Controller',
+                      'Connection Process',
                       style: TextStyle(
-                        fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Connect to your robot via Bluetooth',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey.shade600,
+                        fontSize: 12,
                       ),
                     ),
                   ],
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '1. Robot connects via Bluetooth first\n'
+                  '2. Camera initializes after robot connection\n'
+                  '3. Both can work independently',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.bluetooth_disabled, size: 64, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          const Text(
+            'No Bluetooth Devices Found',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Make sure your robot is:\n'
+            '• Powered on and running\n'
+            '• Bluetooth enabled\n'
+            '• Paired with this device',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: widget.onRefreshDevices,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Scan Again'),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: widget.onShowConnectionTips,
+            child: const Text('View Connection Tips'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeviceList() {
+    return ListView.builder(
+      itemCount: widget.bondedDevices.length,
+      itemBuilder: (context, index) {
+        final device = widget.bondedDevices[index];
+        final isSelected = widget.selectedDevice == device;
+        final isConnecting = widget.isConnecting && isSelected;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: Card(
+            elevation: isSelected ? 4 : 1,
+            child: ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _getDeviceIconColor(device).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  _getDeviceIcon(device),
+                  color: _getDeviceIconColor(device),
                 ),
               ),
-
-              // Connection container
-              Container(
-                padding: const EdgeInsets.all(20),
-                margin: const EdgeInsets.symmetric(vertical: 20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.blue.shade50, Colors.blue.shade100],
+              title: Text(
+                device.name,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    device.address,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.blue.shade200),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.shade200.withValues(alpha: 0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                  if (isConnecting) ...[
+                    const SizedBox(height: 4),
+                    const Row(
                       children: [
-                        Icon(
-                          Icons.bluetooth_searching,
-                          color: Colors.blue.shade700,
-                          size: 24,
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 1.5),
                         ),
-                        const SizedBox(width: 12),
-                        Flexible(
-                          child: Text(
-                            'Available Devices',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade700,
-                            ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Connecting...',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
-
-                    if (bondedDevices.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange.shade200),
+                  ],
+                ],
+              ),
+              trailing: isConnecting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : ElevatedButton(
+                      onPressed: () => widget.onConnectToDevice(device),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _getDeviceIconColor(device),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
                         ),
+                      ),
+                      child: const Text('Connect'),
+                    ),
+              onTap: isConnecting
+                  ? null
+                  : () => widget.onConnectToDevice(device),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  IconData _getDeviceIcon(BluetoothDevice device) {
+    final name = device.name.toLowerCase();
+
+    if (name.contains('esp32') || name.contains('arduino')) {
+      return Icons.memory;
+    } else if (name.contains('robot') || name.contains('bot')) {
+      return Icons.smart_toy;
+    } else if (name.contains('mega') || name.contains('uno')) {
+      return Icons.developer_board;
+    } else {
+      return Icons.bluetooth;
+    }
+  }
+
+  Color _getDeviceIconColor(BluetoothDevice device) {
+    final name = device.name.toLowerCase();
+
+    if (name.contains('esp32')) {
+      return Colors.blue;
+    } else if (name.contains('arduino')) {
+      return Colors.teal;
+    } else if (name.contains('robot') || name.contains('bot')) {
+      return Colors.purple;
+    } else {
+      return Colors.grey;
+    }
+  }
+}
+
+// components/video_feed_section.dart (simplified)
+class VideoFeedSection extends StatelessWidget {
+  final String streamUrl;
+  final bool isLoadingStream;
+  final String errorMessage;
+  final bool isStreamActive;
+  final Key mjpegKey;
+  final VoidCallback onRefreshVideoStream;
+  final Function(CameraServer)? onCameraServerDiscovered;
+
+  const VideoFeedSection({
+    super.key,
+    required this.streamUrl,
+    required this.isLoadingStream,
+    required this.errorMessage,
+    required this.isStreamActive,
+    required this.mjpegKey,
+    required this.onRefreshVideoStream,
+    this.onCameraServerDiscovered,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black,
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        children: [
+          // Video header
+          Container(
+            padding: const EdgeInsets.all(8),
+            color: Colors.grey.shade900,
+            child: Row(
+              children: [
+                Icon(
+                  isStreamActive ? Icons.videocam : Icons.videocam_off,
+                  color: isStreamActive ? Colors.green : Colors.white54,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Live Camera Feed',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isStreamActive
+                        ? Colors.green
+                        : isLoadingStream
+                        ? Colors.orange
+                        : Colors.red,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    isStreamActive
+                        ? 'LIVE'
+                        : isLoadingStream
+                        ? 'LOADING'
+                        : 'OFFLINE',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: onRefreshVideoStream,
+                  icon: const Icon(
+                    Icons.refresh,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  tooltip: 'Refresh Video',
+                ),
+              ],
+            ),
+          ),
+
+          // Video content
+          Expanded(
+            child: isLoadingStream
+                ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: Colors.white),
+                        SizedBox(height: 16),
+                        Text(
+                          'Initializing Camera...',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  )
+                : isStreamActive
+                ? Image.network(
+                    streamUrl,
+                    key: mjpegKey,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Center(
                         child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              Icons.warning_amber,
-                              color: Colors.orange.shade600,
-                              size: 32,
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.red,
+                              size: 48,
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 16),
                             const Text(
-                              'No paired devices found',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              'Camera Error',
+                              style: TextStyle(color: Colors.white),
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Make sure your robot is paired in system settings',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade600,
+                              error.toString(),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
                               ),
                               textAlign: TextAlign.center,
                             ),
                           ],
                         ),
-                      )
-                    else
-                      ...bondedDevices.map(
-                        (device) => Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Card(
-                            elevation: 3,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.all(16),
-                              leading: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade100,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.bluetooth,
-                                  color: Colors.blue,
-                                  size: 24,
-                                ),
-                              ),
-                              title: Text(
-                                device.name.isNotEmpty
-                                    ? device.name
-                                    : 'Unknown Device',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  device.address,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              trailing:
-                                  isConnecting &&
-                                      selectedDevice?.address == device.address
-                                  ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 3,
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.arrow_forward_ios,
-                                      color: Colors.blue.shade600,
-                                      size: 20,
-                                    ),
-                              onTap: isConnecting
-                                  ? null
-                                  : () => onConnectToDevice(device),
+                      );
+                    },
+                  )
+                : Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.videocam_off,
+                            size: 48,
+                            color: Colors.white54,
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Camera Not Available',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-                      ),
-
-                    const SizedBox(height: 20),
-
-                    // Action buttons
-                    Column(
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: onRefreshDevices,
+                          const SizedBox(height: 8),
+                          Text(
+                            errorMessage.isEmpty
+                                ? 'Camera will connect after robot is ready'
+                                : errorMessage,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: onRefreshVideoStream,
                             icon: const Icon(Icons.refresh),
-                            label: const Text('Refresh Devices'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue.shade600,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
+                            label: const Text('Retry Camera'),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: onShowConnectionTips,
-                            icon: const Icon(Icons.help_outline),
-                            label: const Text('Connection Help'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange.shade100,
-                              foregroundColor: Colors.orange.shade700,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-                              // Show camera discovery dialog
-                              final server = await showDialog<CameraServer?>(
-                                context: context,
-                                builder: (context) => CameraDiscoveryDialog(
-                                  onServerSelected: () {
-                                    // Dialog will handle the selection
-                                  },
-                                  onServerConfigured: (server) {
-                                    Navigator.of(context).pop(server);
-                                  },
-                                ),
-                              );
-
-                              // If a server was selected, execute the callback
-                              if (server != null &&
-                                  onCameraServerDiscovered != null) {
-                                onCameraServerDiscovered!(server);
-                              }
-                            },
-                            icon: const Icon(Icons.camera_alt),
-                            label: const Text('Discover Cameras'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green.shade600,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
           ),
-        ),
+        ],
       ),
     );
   }

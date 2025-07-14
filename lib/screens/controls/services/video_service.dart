@@ -2,8 +2,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+/// Helper class for server validation
+class _ServerValidationResult {
+  final bool isValid;
+  final String contentType;
+  final bool isStreamContent;
+
+  _ServerValidationResult({
+    required this.isValid,
+    required this.contentType,
+    required this.isStreamContent,
+  });
+}
+
 class VideoService {
-  static const String _defaultRaspberryPiIP = '192.168.137.4'; //'192.168.1.8';
+  static const String _defaultRaspberryPiIP = '192.168.137.4';
   static const int _defaultPort = 8080;
   static const String _defaultEndpoint = 'my_mac_camera';
 
@@ -16,6 +29,7 @@ class VideoService {
   String _errorMessage = '';
   bool _isStreamActive = false;
   Key _mjpegKey = UniqueKey();
+  bool _isBluetoothPriority = false; // New flag for Bluetooth priority mode
 
   // Getters for state
   bool get isLoadingStream => _isLoadingStream;
@@ -32,22 +46,128 @@ class VideoService {
   /// Get the complete stream URL
   String get streamUrl => 'http://$raspberryPiIP:$port/$endpoint';
 
-  /// Initialize video feed with state management
+  /// Set Bluetooth priority mode - when true, video operations are more conservative
+  void setBluetoothPriorityMode(bool enabled) {
+    _isBluetoothPriority = enabled;
+    print(
+      '🎥 Video service Bluetooth priority mode: ${enabled ? "ENABLED" : "DISABLED"}',
+    );
+  }
+
+  /// Initialize video feed ONLY after Bluetooth is connected
+  Future<VideoState> initializeVideoFeedAfterBluetooth() async {
+    print('🎥 Initializing video feed after Bluetooth connection...');
+    print('📍 Stream URL: $streamUrl');
+
+    // Wait a moment to ensure Bluetooth connection is stable
+    await Future.delayed(const Duration(seconds: 2));
+
+    _isLoadingStream = true;
+    _errorMessage = '';
+
+    try {
+      // Use conservative approach when Bluetooth is connected
+      print('🔍 Testing video connectivity (Bluetooth priority mode)...');
+      bool serverRunning = await _testConnectivityBluetoothSafe();
+
+      if (serverRunning) {
+        print('✅ Video server is accessible');
+        _isLoadingStream = false;
+        _isStreamActive = true;
+        _errorMessage = '';
+      } else {
+        print('❌ Video server is not accessible');
+        _isLoadingStream = false;
+        _isStreamActive = false;
+        _errorMessage =
+            'Camera server not available.\n\n'
+            'The robot is connected via Bluetooth, but the camera server\n'
+            'at $streamUrl is not responding.\n\n'
+            'This is normal if:\n'
+            '• Camera server is on a different device\n'
+            '• Camera server is not running\n'
+            '• Network configuration is different';
+      }
+    } catch (e) {
+      print('🚨 Video initialization error: $e');
+      _isLoadingStream = false;
+      _isStreamActive = false;
+      _errorMessage = 'Video initialization failed: $e';
+    }
+
+    return VideoState(
+      isLoading: _isLoadingStream,
+      isActive: _isStreamActive,
+      errorMessage: _errorMessage,
+    );
+  }
+
+  /// Conservative connectivity test that won't interfere with Bluetooth
+  Future<bool> _testConnectivityBluetoothSafe() async {
+    try {
+      print('🔍 Testing video connectivity (Bluetooth-safe mode)...');
+
+      final client = http.Client();
+      try {
+        // Use shorter timeout to avoid interfering with Bluetooth
+        final response = await client
+            .get(Uri.parse(streamUrl))
+            .timeout(const Duration(seconds: 3));
+
+        print('📡 Video server response: ${response.statusCode}');
+        return response.statusCode == 200;
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      print('⚠️ Video connectivity test failed (this is normal): $e');
+      return false;
+    }
+  }
+
+  /// Quick refresh without aggressive network operations
+  Future<VideoState> quickRefreshStream() async {
+    print('🔄 Quick video stream refresh...');
+
+    _mjpegKey = UniqueKey();
+
+    // Don't do extensive network testing during refresh if Bluetooth is active
+    if (_isBluetoothPriority) {
+      _errorMessage = '';
+      return VideoState(
+        isLoading: false,
+        isActive: _isStreamActive,
+        errorMessage: '',
+      );
+    }
+
+    // Do a quick test
+    bool serverRunning = await _testConnectivityBluetoothSafe();
+    _isStreamActive = serverRunning;
+    _errorMessage = serverRunning ? '' : 'Camera server not responding';
+
+    return VideoState(
+      isLoading: false,
+      isActive: _isStreamActive,
+      errorMessage: _errorMessage,
+    );
+  }
+
+  /// Original initialization method for when Bluetooth is NOT connected
   Future<VideoState> initializeVideoFeed() async {
-    print('🎥 Initializing video feed...');
+    print('🎥 Initializing video feed (no Bluetooth constraint)...');
     print('📍 Stream URL: $streamUrl');
 
     _isLoadingStream = true;
     _errorMessage = '';
 
     try {
-      // First test direct connectivity to the stream
+      // Test direct connectivity first
       print('🔍 Testing direct stream connectivity...');
       bool serverRunning = await testConnectivity();
 
       if (!serverRunning) {
-        print('⚠️  Direct stream failed, testing base server...');
-        // If direct stream fails, test base server
+        print('⚠️ Direct stream failed, testing base server...');
         serverRunning = await testAlternativeConnectivity();
       }
 
@@ -72,12 +192,7 @@ class VideoService {
       print('🚨 Video initialization error: $e');
       _isLoadingStream = false;
       _isStreamActive = false;
-      _errorMessage =
-          'Failed to initialize video feed: $e\n\n'
-          'Please check:\n'
-          '- Network connectivity\n'
-          '- Camera server status\n'
-          '- IP address configuration';
+      _errorMessage = 'Failed to initialize video feed: $e';
     }
 
     return VideoState(
@@ -85,6 +200,135 @@ class VideoService {
       isActive: _isStreamActive,
       errorMessage: _errorMessage,
     );
+  }
+
+  /// Test connectivity to the video server
+  Future<bool> testConnectivity() async {
+    const maxAttempts = 2;
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        print('🔍 Testing video connectivity (attempt $attempt/$maxAttempts)');
+
+        final client = http.Client();
+        try {
+          final response = await client
+              .get(Uri.parse(streamUrl))
+              .timeout(const Duration(seconds: 5));
+
+          print('📡 Video server response: ${response.statusCode}');
+
+          if (response.statusCode == 200) {
+            print('✅ Video server is accessible');
+            return true;
+          } else {
+            print('⚠️ Video server returned status: ${response.statusCode}');
+          }
+        } finally {
+          client.close();
+        }
+      } catch (e) {
+        print('❌ Video connectivity test error: $e');
+      }
+
+      if (attempt < maxAttempts) {
+        await Future.delayed(const Duration(milliseconds: 1000));
+      }
+    }
+
+    return false;
+  }
+
+  /// Test alternative connectivity method
+  Future<bool> testAlternativeConnectivity() async {
+    try {
+      print('🔍 Testing alternative connectivity to base URL...');
+
+      final client = http.Client();
+      try {
+        final baseUrl = 'http://$raspberryPiIP:$port';
+        print('📡 Testing base URL: $baseUrl');
+
+        final response = await client
+            .get(Uri.parse(baseUrl))
+            .timeout(const Duration(seconds: 4));
+
+        print('📡 Base server response: ${response.statusCode}');
+
+        bool serverRunning =
+            response.statusCode == 200 ||
+            response.statusCode == 404 ||
+            response.statusCode == 302;
+
+        if (serverRunning) {
+          print('✅ Base server is running');
+          return true;
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      print('❌ Alternative connectivity test error: $e');
+    }
+
+    return false;
+  }
+
+  /// Create video service with custom configuration
+  static VideoService createCustom({
+    required String ip,
+    int port = _defaultPort,
+    String endpoint = _defaultEndpoint,
+  }) {
+    return VideoService(raspberryPiIP: ip, port: port, endpoint: endpoint);
+  }
+
+  /// Create video service from discovered camera server
+  VideoService createFromDiscoveredServer(CameraServer server) {
+    print('🔄 Creating video service from discovered server: ${server.url}');
+
+    return VideoService(
+      raspberryPiIP: server.ip,
+      port: server.port,
+      endpoint: server.endpoint,
+    );
+  }
+
+  /// Get basic diagnostic information without intensive network operations
+  Future<Map<String, dynamic>> getBasicDiagnostics() async {
+    final diagnostics = <String, dynamic>{};
+
+    try {
+      diagnostics['streamUrl'] = streamUrl;
+      diagnostics['isBluetoothPriority'] = _isBluetoothPriority;
+      diagnostics['isStreamActive'] = _isStreamActive;
+      diagnostics['errorMessage'] = _errorMessage;
+
+      // Only do network test if not in Bluetooth priority mode
+      if (!_isBluetoothPriority) {
+        final client = http.Client();
+        try {
+          final response = await client
+              .get(Uri.parse(streamUrl))
+              .timeout(const Duration(seconds: 2));
+          diagnostics['serverReachable'] = response.statusCode == 200;
+          diagnostics['serverStatus'] = response.statusCode;
+        } catch (e) {
+          diagnostics['serverReachable'] = false;
+          diagnostics['serverError'] = e.toString();
+        } finally {
+          client.close();
+        }
+      } else {
+        diagnostics['serverReachable'] = 'Skipped (Bluetooth priority)';
+      }
+
+      diagnostics['timestamp'] = DateTime.now().toIso8601String();
+    } catch (e) {
+      diagnostics['error'] = e.toString();
+    }
+
+    return diagnostics;
   }
 
   /// Refresh video stream
@@ -100,713 +344,206 @@ class VideoService {
     );
   }
 
-  /// Test connectivity to the video server
-  Future<bool> testConnectivity() async {
+  /// Initialize video feed with auto-discovery fallback
+  /// This is a simplified version of initializeVideoFeedWithDiscovery that just calls
+  /// the standard initializeVideoFeed method for compatibility
+  Future<VideoState> initializeVideoFeedWithDiscovery() async {
+    print(
+      '🔍 Initializing video feed with auto-discovery (compatibility mode)...',
+    );
+    // Just use the regular initialization for simplicity
+    return await initializeVideoFeed();
+  }
+
+  /// Perform auto-discovery to find camera servers on the network
+  Future<DiscoveryResult> performAutoDiscovery() async {
+    print('🔍 Starting auto-discovery for camera servers...');
+    _isLoadingStream = true;
+
     try {
-      print('🔍 Testing video connectivity to: $streamUrl');
+      // Simulated discovery for common addresses
+      List<String> commonIPs = [
+        raspberryPiIP, // Try the current IP first
+        '192.168.137.4',
+        '192.168.137.1',
+        '192.168.0.1',
+        '192.168.1.1',
+        '192.168.1.100',
+        '192.168.1.101',
+        '192.168.1.102',
+        '10.0.0.1',
+        '10.0.0.2',
+        '127.0.0.1', // Localhost
+      ];
+
+      List<int> commonPorts = [8080, 8000, 5000, 80];
+      List<String> commonEndpoints = [
+        'my_mac_camera',
+        'video',
+        'stream',
+        'mjpeg',
+        'camera',
+      ];
+
+      List<CameraServer> discoveredServers = [];
+      CameraServer? bestServer;
+      int highestConfidence = 0; // Try current configuration first
+      String currentUrl = 'http://$raspberryPiIP:$port/$endpoint';
+
+      // Check if current configuration is valid
+      final currentServerValidation = await _testServerConnectivity(currentUrl);
+      if (currentServerValidation.isValid) {
+        final updatedCurrentServer = CameraServer(
+          ip: raspberryPiIP,
+          port: port,
+          endpoint: endpoint,
+          url: currentUrl,
+          confidence: 10,
+          isPiDevice: true,
+          contentType: currentServerValidation.contentType,
+        );
+        discoveredServers.add(updatedCurrentServer);
+        bestServer = updatedCurrentServer;
+        highestConfidence = updatedCurrentServer.confidence;
+      }
+
+      // Quick scan for other potential servers
+      for (var ip in commonIPs) {
+        if (ip == raspberryPiIP) continue; // Skip already tested IP
+
+        // Test if host is reachable
+        bool hostReachable = await _isHostReachable(ip);
+        if (!hostReachable) continue;
+
+        // If host is reachable, try common port/endpoint combinations
+        for (var serverPort in commonPorts) {
+          for (var serverEndpoint in commonEndpoints) {
+            final url = 'http://$ip:$serverPort/$serverEndpoint';
+
+            // Check if the device is likely a Raspberry Pi
+            bool isProbablyPi =
+                ip.startsWith('192.168.1.') || ip.startsWith('192.168.137.');
+
+            // Base confidence level
+            int serverConfidence = isProbablyPi ? 8 : 5;
+
+            final serverValidation = await _testServerConnectivity(url);
+            if (serverValidation.isValid) {
+              final server = CameraServer(
+                ip: ip,
+                port: serverPort,
+                endpoint: serverEndpoint,
+                url: url,
+                confidence:
+                    serverConfidence +
+                    (serverValidation.isStreamContent ? 2 : 0),
+                isPiDevice: isProbablyPi,
+                contentType: serverValidation.contentType,
+              );
+
+              discoveredServers.add(server);
+
+              // Update best server if confidence is higher
+              if (server.confidence > highestConfidence) {
+                highestConfidence = server.confidence;
+                bestServer = server;
+              }
+            }
+          }
+        }
+      }
+
+      _isLoadingStream = false;
+
+      // Return discovery result
+      return DiscoveryResult(
+        cameraServers: discoveredServers,
+        isSuccessful: discoveredServers.isNotEmpty,
+        bestServer: bestServer,
+        errorMessage: discoveredServers.isEmpty
+            ? 'No camera servers found'
+            : null,
+      );
+    } catch (e) {
+      print('❌ Auto-discovery error: $e');
+      _isLoadingStream = false;
+      return DiscoveryResult(
+        cameraServers: [],
+        isSuccessful: false,
+        errorMessage: 'Error during discovery: $e',
+      );
+    }
+  }
+
+  /// Test if a host is reachable
+  Future<bool> _isHostReachable(String ip) async {
+    try {
       final client = http.Client();
       try {
-        final response = await client
-            .get(Uri.parse(streamUrl))
-            .timeout(const Duration(seconds: 8));
-
-        print('📡 Video server response: ${response.statusCode}');
-
-        if (response.statusCode == 200) {
-          print('✅ Video server is accessible');
+        await client
+            .get(Uri.parse('http://$ip'))
+            .timeout(const Duration(seconds: 1));
+        return true;
+      } catch (_) {
+        // Try another common port if initial attempt fails
+        try {
+          await client
+              .get(Uri.parse('http://$ip:8080'))
+              .timeout(const Duration(milliseconds: 800));
           return true;
-        } else {
-          print('⚠️  Video server returned status: ${response.statusCode}');
+        } catch (_) {
           return false;
         }
       } finally {
         client.close();
       }
-    } catch (e) {
-      print('❌ Video connectivity test failed: $e');
+    } catch (_) {
       return false;
     }
   }
 
-  /// Test alternative connectivity method
-  Future<bool> testAlternativeConnectivity() async {
+  /// Test if a URL is a valid camera server
+  /// Returns a validation result with content type information
+  Future<_ServerValidationResult> _testServerConnectivity(String url) async {
     try {
-      print('🔍 Testing alternative connectivity to base URL...');
       final client = http.Client();
       try {
-        final baseUrl = 'http://$raspberryPiIP:$port';
-        print('📡 Testing base URL: $baseUrl');
-
         final response = await client
-            .get(Uri.parse(baseUrl))
-            .timeout(const Duration(seconds: 8));
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 2));
 
-        print('📡 Base server response: ${response.statusCode}');
+        if (response.statusCode == 200) {
+          String contentType = response.headers['content-type'] ?? '';
+          bool isStreamContent =
+              contentType.contains('image') ||
+              contentType.contains('video') ||
+              contentType.contains('stream') ||
+              contentType.contains('mjpeg');
 
-        bool serverRunning =
-            response.statusCode == 200 ||
-            response.statusCode == 404 ||
-            response.statusCode == 302;
-
-        if (serverRunning) {
-          print('✅ Base server is running');
-        } else {
-          print('❌ Base server not accessible');
+          return _ServerValidationResult(
+            isValid: true,
+            contentType: contentType,
+            isStreamContent: isStreamContent,
+          );
         }
-
-        return serverRunning;
+        return _ServerValidationResult(
+          isValid: false,
+          contentType: 'unknown',
+          isStreamContent: false,
+        );
       } finally {
         client.close();
       }
-    } catch (e) {
-      print('❌ Alternative video connectivity test failed: $e');
-      return false;
-    }
-  }
-
-  /// Get network diagnostic information
-  Future<NetworkDiagnostics> getNetworkDiagnostics() async {
-    print('🔍 Running network diagnostics...');
-
-    final diagnostics = NetworkDiagnostics();
-
-    // Test base server connectivity
-    try {
-      final baseUrl = 'http://$raspberryPiIP:$port';
-      final client = http.Client();
-      final response = await client
-          .get(Uri.parse(baseUrl))
-          .timeout(const Duration(seconds: 5));
-
-      diagnostics.baseServerAccessible = response.statusCode < 500;
-      diagnostics.baseServerStatus = response.statusCode;
-      client.close();
-    } catch (e) {
-      diagnostics.baseServerAccessible = false;
-      diagnostics.baseServerError = e.toString();
-    }
-
-    // Test stream endpoint
-    try {
-      final client = http.Client();
-      final response = await client
-          .get(Uri.parse(streamUrl))
-          .timeout(const Duration(seconds: 5));
-
-      diagnostics.streamEndpointAccessible = response.statusCode == 200;
-      diagnostics.streamEndpointStatus = response.statusCode;
-      client.close();
-    } catch (e) {
-      diagnostics.streamEndpointAccessible = false;
-      diagnostics.streamEndpointError = e.toString();
-    }
-
-    return diagnostics;
-  }
-
-  /// Test multiple common IP addresses for the camera server
-  Future<List<String>> scanForCameraServer() async {
-    print('🔍 Scanning for camera server...');
-
-    final List<String> foundServers = [];
-
-    // Common IP patterns for local networks
-    final List<String> ipPatterns = [
-      '192.168.1.8', // Current default
-      '192.168.0.8', // Alternative subnet
-      '192.168.1.100', // Alternative IP
-      '192.168.0.100', // Alternative IP
-      '10.0.0.8', // Alternative private network
-      '172.16.0.8', // Alternative private network
-    ];
-
-    for (final ip in ipPatterns) {
-      try {
-        final testUrl = 'http://$ip:$port/$endpoint';
-        final client = http.Client();
-        final response = await client
-            .get(Uri.parse(testUrl))
-            .timeout(const Duration(seconds: 3));
-
-        if (response.statusCode == 200) {
-          foundServers.add(ip);
-          print('✅ Found camera server at: $ip');
-        }
-
-        client.close();
-      } catch (e) {
-        // Server not found at this IP, continue scanning
-      }
-    }
-
-    return foundServers;
-  }
-
-  /// Auto-discover camera servers on the network
-  Future<List<CameraServer>> autoDiscoverCameraServers() async {
-    print('🚀 Auto-discovering camera servers...');
-
-    final List<CameraServer> foundServers = [];
-
-    // Get local network base
-    List<String> networkBases;
-    try {
-      networkBases = await _getLocalNetworkRanges();
-      if (networkBases.isEmpty) {
-        networkBases = ['192.168.1', '192.168.0', '10.0.0', '172.16.0'];
-      }
-    } catch (e) {
-      print('⚠️  Could not determine local network: $e');
-      networkBases = [
-        '192.168.1',
-        '192.168.0',
-        '192.168.137.0',
-        '192.168.137.4',
-        '192.168.137.1',
-        '10.0.0',
-        '172.16.0',
-      ];
-    }
-
-    // Step 1: Find active hosts
-    final List<String> activeHosts = [];
-    for (final networkBase in networkBases) {
-      final hosts = await _pingSweep(networkBase);
-      activeHosts.addAll(hosts);
-    }
-
-    if (activeHosts.isEmpty) {
-      print('❌ No active hosts found on the network');
-      return foundServers;
-    }
-
-    print('✅ Found ${activeHosts.length} active hosts');
-
-    // Step 2: Identify potential Raspberry Pi devices
-    final List<RaspberryPiDevice> piDevices = await _scanForRaspberryPiDevices(
-      activeHosts,
-    );
-
-    // Step 3: Scan Pi devices for camera servers
-    final List<CameraServer> piCameraServers = await _scanRaspberryPiForCameras(
-      piDevices,
-    );
-    foundServers.addAll(piCameraServers);
-
-    // Step 4: If no Pi devices found, scan all active hosts
-    if (piDevices.isEmpty) {
-      print(
-        '⚠️  No Raspberry Pi devices detected, scanning all active hosts...',
-      );
-      final List<CameraServer> allHostCameras = await _scanAllHostsForCameras(
-        activeHosts,
-      );
-      foundServers.addAll(allHostCameras);
-    }
-
-    // Sort by confidence (Pi devices first, then by other factors)
-    foundServers.sort((a, b) => b.confidence.compareTo(a.confidence));
-
-    return foundServers;
-  }
-
-  /// Ping sweep to find active hosts
-  Future<List<String>> _pingSweep(String networkBase) async {
-    print('🔍 Ping sweep: $networkBase.1-254');
-    final List<String> activeHosts = [];
-
-    // Common host numbers to scan first (more likely to be servers)
-    final List<int> priorityHosts = [
-      1,
-      8,
-      100,
-      101,
-      102,
-      103,
-      104,
-      105,
-      200,
-      201,
-      202,
-    ];
-    final List<int> allHosts = List.generate(254, (index) => index + 1);
-
-    // Combine priority hosts with all hosts, removing duplicates
-    final Set<int> hostSet = {...priorityHosts, ...allHosts};
-    final List<int> hostsToScan = hostSet.toList();
-
-    final List<Future<String?>> futures = [];
-
-    for (final hostNum in hostsToScan.take(50)) {
-      // Limit to 50 hosts for performance
-      futures.add(_testHostConnectivity('$networkBase.$hostNum'));
-    }
-
-    final results = await Future.wait(futures);
-
-    for (final result in results) {
-      if (result != null) {
-        activeHosts.add(result);
-        print('   ✅ Host alive: $result');
-      }
-    }
-
-    return activeHosts;
-  }
-
-  /// Test if a host is active
-  Future<String?> _testHostConnectivity(String ip) async {
-    try {
-      final client = http.Client();
-      // Quick test with short timeout
-      await client
-          .get(Uri.parse('http://$ip'))
-          .timeout(const Duration(seconds: 1));
-
-      client.close();
-      return ip; // Host is responsive
-    } catch (e) {
-      return null; // Host is not responsive
-    }
-  }
-
-  /// Scan active hosts for Raspberry Pi devices
-  Future<List<RaspberryPiDevice>> _scanForRaspberryPiDevices(
-    List<String> activeHosts,
-  ) async {
-    print('🔍 Scanning for Raspberry Pi devices...');
-    final List<RaspberryPiDevice> piDevices = [];
-
-    final List<Future<RaspberryPiDevice?>> futures = [];
-
-    for (final ip in activeHosts) {
-      futures.add(_checkRaspberryPiDevice(ip));
-    }
-
-    final results = await Future.wait(futures);
-
-    for (final result in results) {
-      if (result != null) {
-        piDevices.add(result);
-        print(
-          '   🍓 Potential Raspberry Pi: ${result.ip} (${result.indicators.join(", ")})',
-        );
-      }
-    }
-
-    return piDevices;
-  }
-
-  /// Check if a host is likely a Raspberry Pi
-  Future<RaspberryPiDevice?> _checkRaspberryPiDevice(String ip) async {
-    final List<String> indicators = [];
-
-    // Common Raspberry Pi ports
-    final Map<int, String> testPorts = {
-      22: 'SSH',
-      80: 'HTTP',
-      8080: 'Camera',
-      5900: 'VNC',
-    };
-
-    // Test each port
-    for (final entry in testPorts.entries) {
-      if (await _testPortConnectivity(ip, entry.key)) {
-        indicators.add(entry.value);
-      }
-    }
-
-    if (indicators.isNotEmpty) {
-      return RaspberryPiDevice(
-        ip: ip,
-        indicators: indicators,
-        confidence: indicators.length,
-      );
-    }
-
-    return null;
-  }
-
-  /// Test if a specific port is open
-  Future<bool> _testPortConnectivity(String ip, int port) async {
-    try {
-      final client = http.Client();
-      await client
-          .get(Uri.parse('http://$ip:$port'))
-          .timeout(const Duration(seconds: 2));
-
-      client.close();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Scan Raspberry Pi devices for camera servers
-  Future<List<CameraServer>> _scanRaspberryPiForCameras(
-    List<RaspberryPiDevice> piDevices,
-  ) async {
-    print('🔍 Scanning Raspberry Pi devices for camera servers...');
-    final List<CameraServer> cameraServers = [];
-
-    final List<int> cameraPorts = [8080, 8081, 8000, 5000, 80];
-    final List<String> cameraEndpoints = [
-      'my_mac_camera',
-      'video',
-      'stream',
-      'camera',
-      'mjpeg',
-      'feed',
-      'cam',
-      'webcam',
-    ];
-
-    for (final piDevice in piDevices) {
-      print('   🔍 Scanning ${piDevice.ip} for camera servers...');
-
-      for (final port in cameraPorts) {
-        for (final endpoint in cameraEndpoints) {
-          final testUrl = 'http://${piDevice.ip}:$port/$endpoint';
-
-          try {
-            final client = http.Client();
-            final response = await client
-                .get(Uri.parse(testUrl))
-                .timeout(const Duration(seconds: 3));
-
-            if (response.statusCode == 200) {
-              final contentType = response.headers['content-type'] ?? '';
-
-              // Check if this looks like a video stream
-              if (contentType.contains('image') ||
-                  contentType.contains('video') ||
-                  contentType.contains('stream') ||
-                  contentType.contains('mjpeg')) {
-                cameraServers.add(
-                  CameraServer(
-                    ip: piDevice.ip,
-                    port: port,
-                    endpoint: endpoint,
-                    url: testUrl,
-                    contentType: contentType,
-                    confidence: piDevice.confidence + 10, // Bonus for Pi device
-                    isPiDevice: true,
-                  ),
-                );
-
-                print(
-                  '   📹 Found camera server: $testUrl (Type: $contentType)',
-                );
-              }
-            }
-
-            client.close();
-          } catch (e) {
-            // Server not found at this configuration, continue
-          }
-        }
-      }
-    }
-
-    return cameraServers;
-  }
-
-  /// Scan all hosts for camera servers (fallback)
-  Future<List<CameraServer>> _scanAllHostsForCameras(
-    List<String> activeHosts,
-  ) async {
-    final List<CameraServer> cameraServers = [];
-
-    final List<int> cameraPorts = [8080, 8081, 8000, 5000];
-    final List<String> cameraEndpoints = [
-      'my_mac_camera',
-      'video',
-      'stream',
-      'camera',
-    ];
-
-    for (final ip in activeHosts) {
-      for (final port in cameraPorts) {
-        for (final endpoint in cameraEndpoints) {
-          final testUrl = 'http://$ip:$port/$endpoint';
-
-          try {
-            final client = http.Client();
-            final response = await client
-                .get(Uri.parse(testUrl))
-                .timeout(const Duration(seconds: 2));
-
-            if (response.statusCode == 200) {
-              final contentType = response.headers['content-type'] ?? '';
-
-              if (contentType.contains('image') ||
-                  contentType.contains('video') ||
-                  contentType.contains('stream') ||
-                  contentType.contains('mjpeg')) {
-                cameraServers.add(
-                  CameraServer(
-                    ip: ip,
-                    port: port,
-                    endpoint: endpoint,
-                    url: testUrl,
-                    contentType: contentType,
-                    confidence: 1, // Lower confidence for non-Pi devices
-                    isPiDevice: false,
-                  ),
-                );
-
-                print(
-                  '   📹 Found camera server: $testUrl (Type: $contentType)',
-                );
-              }
-            }
-
-            client.close();
-          } catch (e) {
-            // Server not found, continue
-          }
-        }
-      }
-    }
-
-    return cameraServers;
-  }
-
-  /// Get local network ranges for scanning
-  Future<List<String>> _getLocalNetworkRanges() async {
-    final List<String> networks = [];
-
-    try {
-      // This is a simplified approach - in a real app you might want to use
-      // a more sophisticated network discovery library
-      final client = http.Client();
-
-      // Try to determine local network by testing common gateways
-      final List<String> commonGateways = [
-        '192.168.1.1',
-        '192.168.0.1',
-        '10.0.0.1',
-        '172.16.0.1',
-      ];
-
-      for (final gateway in commonGateways) {
-        try {
-          final response = await client
-              .get(Uri.parse('http://$gateway'))
-              .timeout(const Duration(seconds: 2));
-
-          if (response.statusCode < 500) {
-            // Gateway is accessible, add this network range
-            final baseParts = gateway.split('.');
-            final networkBase =
-                '${baseParts[0]}.${baseParts[1]}.${baseParts[2]}';
-            networks.add(networkBase);
-            print('✅ Detected network: $networkBase.x');
-          }
-        } catch (e) {
-          // Gateway not accessible, continue
-        }
-      }
-
-      client.close();
-    } catch (e) {
-      print('⚠️  Network detection failed: $e');
-    }
-
-    return networks;
-  }
-
-  /// Create video service with custom configuration
-  static VideoService createCustom({
-    required String ip,
-    int port = _defaultPort,
-    String endpoint = _defaultEndpoint,
-  }) {
-    return VideoService(raspberryPiIP: ip, port: port, endpoint: endpoint);
-  }
-
-  /// Update video service configuration with discovered server
-  VideoService updateWithDiscoveredServer(String discoveredUrl) {
-    try {
-      final uri = Uri.parse(discoveredUrl);
-      final host = uri.host;
-      final port = uri.port;
-      final endpoint = uri.pathSegments.isNotEmpty
-          ? uri.pathSegments.first
-          : _defaultEndpoint;
-
-      print('🔄 Updating video service configuration:');
-      print('   Host: $host');
-      print('   Port: $port');
-      print('   Endpoint: $endpoint');
-
-      return VideoService(raspberryPiIP: host, port: port, endpoint: endpoint);
-    } catch (e) {
-      print('❌ Failed to parse discovered URL: $e');
-      return this;
-    }
-  }
-
-  /// Initialize video feed with auto-discovery fallback
-  Future<VideoState> initializeVideoFeedWithDiscovery() async {
-    print('🎥 Initializing video feed with auto-discovery...');
-
-    // Always try auto-discovery first to handle network changes
-    print('🔍 Starting auto-discovery for network changes...');
-
-    final discoveryResult = await performAutoDiscovery();
-
-    if (discoveryResult.isSuccessful && discoveryResult.bestServer != null) {
-      print('✅ Auto-discovery successful');
-
-      // Update configuration with discovered server
-      final bestServer = discoveryResult.bestServer!;
-      print('🎯 Using discovered server: ${bestServer.url}');
-
-      // Test the discovered server
-      try {
-        final client = http.Client();
-        final response = await client
-            .get(Uri.parse(bestServer.url))
-            .timeout(const Duration(seconds: 5));
-
-        if (response.statusCode == 200) {
-          print('✅ Discovered server is working: ${bestServer.url}');
-
-          // Update state and return success
-          _isLoadingStream = false;
-          _isStreamActive = true;
-          _errorMessage = '';
-
-          client.close();
-          return VideoState(isLoading: false, isActive: true, errorMessage: '');
-        }
-
-        client.close();
-      } catch (e) {
-        print('❌ Discovered server failed: $e');
-      }
-    }
-
-    // If auto-discovery fails, try the configured server as fallback
-    print('⚠️  Auto-discovery failed, trying configured server...');
-    final initialState = await initializeVideoFeed();
-
-    if (initialState.isActive) {
-      print('✅ Configured video server is working');
-      return initialState;
-    }
-
-    // All attempts failed
-    print('❌ Auto-discovery failed to find working camera servers');
-    final errorMsg = discoveryResult.errorMessage ?? 'No camera servers found';
-
-    return VideoState(
-      isLoading: false,
-      isActive: false,
-      errorMessage:
-          'Auto-discovery failed: $errorMsg\n\n'
-          'Attempted:\n'
-          '• Configured server: $streamUrl\n'
-          '• Auto-discovery: ${discoveryResult.cameraServers.length} servers found\n\n'
-          'Please ensure camera server is running and accessible.',
-    );
-  }
-
-  /// Perform auto-discovery and return structured result
-  Future<DiscoveryResult> performAutoDiscovery() async {
-    try {
-      final cameraServers = await autoDiscoverCameraServers();
-
-      if (cameraServers.isEmpty) {
-        return DiscoveryResult(
-          cameraServers: [],
-          isSuccessful: false,
-          errorMessage: 'No camera servers found on the network',
-        );
-      }
-
-      // Find the best server (highest confidence)
-      final bestServer = cameraServers.reduce(
-        (a, b) => a.confidence > b.confidence ? a : b,
-      );
-
-      return DiscoveryResult(
-        cameraServers: cameraServers,
-        isSuccessful: true,
-        bestServer: bestServer,
-      );
-    } catch (e) {
-      return DiscoveryResult(
-        cameraServers: [],
-        isSuccessful: false,
-        errorMessage: 'Auto-discovery failed: $e',
+    } catch (_) {
+      return _ServerValidationResult(
+        isValid: false,
+        contentType: 'unknown',
+        isStreamContent: false,
       );
     }
   }
 
-  /// Create video service with discovered camera server
-  VideoService createFromDiscoveredServer(CameraServer server) {
-    print('🔄 Creating video service from discovered server: ${server.url}');
-
-    return VideoService(
-      raspberryPiIP: server.ip,
-      port: server.port,
-      endpoint: server.endpoint,
-    );
-  }
-
-  /// Diagnostic method to test network connectivity
-  Future<Map<String, dynamic>> runNetworkDiagnostics() async {
-    print('🔍 Running network diagnostics...');
-
-    final diagnostics = <String, dynamic>{};
-
-    try {
-      // Test internet connectivity
-      final client = http.Client();
-      final response = await client
-          .get(Uri.parse('https://www.google.com'))
-          .timeout(const Duration(seconds: 5));
-
-      diagnostics['internet'] = response.statusCode == 200;
-      client.close();
-    } catch (e) {
-      diagnostics['internet'] = false;
-      diagnostics['internetError'] = e.toString();
-    }
-
-    // Test configured camera server
-    try {
-      final client = http.Client();
-      final response = await client
-          .get(Uri.parse(streamUrl))
-          .timeout(const Duration(seconds: 5));
-
-      diagnostics['configuredServer'] = response.statusCode == 200;
-      client.close();
-    } catch (e) {
-      diagnostics['configuredServer'] = false;
-      diagnostics['configuredServerError'] = e.toString();
-    }
-
-    // Test auto-discovery
-    try {
-      final discoveryResult = await performAutoDiscovery();
-      diagnostics['autoDiscovery'] = discoveryResult.isSuccessful;
-      diagnostics['discoveredServers'] = discoveryResult.cameraServers.length;
-
-      if (discoveryResult.bestServer != null) {
-        diagnostics['bestServer'] = discoveryResult.bestServer!.url;
-      }
-    } catch (e) {
-      diagnostics['autoDiscovery'] = false;
-      diagnostics['autoDiscoveryError'] = e.toString();
-    }
-
-    print('📊 Network diagnostics completed: $diagnostics');
-    return diagnostics;
-  }
+  // End of VideoService class
 }
 
 /// Video state data class
@@ -820,38 +557,14 @@ class VideoState {
     required this.isActive,
     required this.errorMessage,
   });
-}
 
-/// Network diagnostics data class
-class NetworkDiagnostics {
-  bool baseServerAccessible = false;
-  int? baseServerStatus;
-  String? baseServerError;
-
-  bool streamEndpointAccessible = false;
-  int? streamEndpointStatus;
-  String? streamEndpointError;
-
-  String getDiagnosticSummary() {
-    final buffer = StringBuffer();
-    buffer.writeln('Network Diagnostics:');
-    buffer.writeln(
-      'Base Server: ${baseServerAccessible ? "✅" : "❌"} (Status: $baseServerStatus)',
-    );
-    if (baseServerError != null) {
-      buffer.writeln('Base Error: $baseServerError');
-    }
-    buffer.writeln(
-      'Stream Endpoint: ${streamEndpointAccessible ? "✅" : "❌"} (Status: $streamEndpointStatus)',
-    );
-    if (streamEndpointError != null) {
-      buffer.writeln('Stream Error: $streamEndpointError');
-    }
-    return buffer.toString();
+  @override
+  String toString() {
+    return 'VideoState(isLoading: $isLoading, isActive: $isActive, error: "$errorMessage")';
   }
 }
 
-/// Camera server data class
+/// Camera server data class for discovery
 class CameraServer {
   final String ip;
   final int port;
@@ -873,25 +586,40 @@ class CameraServer {
 
   @override
   String toString() {
-    return 'CameraServer(ip: $ip, port: $port, endpoint: $endpoint, confidence: $confidence, isPiDevice: $isPiDevice)';
+    return 'CameraServer(ip: $ip, port: $port, endpoint: $endpoint, confidence: $confidence)';
   }
 }
 
-/// Raspberry Pi device data class
-class RaspberryPiDevice {
-  final String ip;
-  final List<String> indicators;
-  final int confidence;
+/// Video service factory for different scenarios
+class VideoServiceFactory {
+  /// Create video service for Bluetooth-first scenario
+  static VideoService createForBluetoothMode({
+    String ip = '192.168.137.4',
+    int port = 8080,
+    String endpoint = 'my_mac_camera',
+  }) {
+    final service = VideoService(
+      raspberryPiIP: ip,
+      port: port,
+      endpoint: endpoint,
+    );
+    service.setBluetoothPriorityMode(true);
+    return service;
+  }
 
-  const RaspberryPiDevice({
-    required this.ip,
-    required this.indicators,
-    required this.confidence,
-  });
-
-  @override
-  String toString() {
-    return 'RaspberryPiDevice(ip: $ip, indicators: $indicators, confidence: $confidence)';
+  /// Create video service for standalone mode
+  static VideoService createForStandaloneMode({
+    String ip = '192.168.137.4',
+    int port = 8080,
+    String endpoint = 'my_mac_camera',
+  }) {
+    final service = VideoService(
+      raspberryPiIP: ip,
+      port: port,
+      endpoint: endpoint,
+    );
+    service.setBluetoothPriorityMode(false);
+    return service;
   }
 }
 
@@ -899,13 +627,18 @@ class RaspberryPiDevice {
 class DiscoveryResult {
   final List<CameraServer> cameraServers;
   final bool isSuccessful;
-  final String? errorMessage;
   final CameraServer? bestServer;
+  final String? errorMessage;
 
   const DiscoveryResult({
     required this.cameraServers,
     required this.isSuccessful,
-    this.errorMessage,
     this.bestServer,
+    this.errorMessage,
   });
+
+  @override
+  String toString() {
+    return 'DiscoveryResult(successful: $isSuccessful, servers: $cameraServers, bestServer: $bestServer, error: $errorMessage)';
+  }
 }

@@ -6,7 +6,7 @@ import 'services/bluetoth_service.dart';
 
 // Import all components
 import 'components/bluetooth_section.dart';
-import 'components/video_feed_section.dart';
+import 'components/video_feed_section.dart' as video;
 import 'components/control_mode_selector.dart';
 import 'components/quick_actions_section.dart';
 import 'components/speed_control_section.dart';
@@ -17,7 +17,7 @@ import 'components/servo_control_section.dart';
 // Import all services
 import 'services/video_service.dart';
 import 'services/robot_control_service.dart';
-import 'services/orientation_service.dart';
+import 'services/orientation_service.dart' as orientation;
 
 // Control mode selection
 enum ControlMode { driving, armControl }
@@ -52,6 +52,9 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
   bool _isVideoInitialized = false;
   bool _isVideoInitializing = false;
 
+  // Flag to pause network operations during critical Bluetooth operations
+  bool _pauseNetworkOperations = false;
+
   // Bluetooth
   BluetoothConnection? connection;
   bool isConnecting = false;
@@ -83,7 +86,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     _videoService = VideoService();
 
     // Start in portrait mode for Bluetooth connection
-    OrientationService.switchToPortraitMode();
+    orientation.OrientationService.switchToPortraitMode();
     _initializeBluetooth();
     // Don't initialize video feed until Bluetooth is connected
     // _initializeVideoFeed();
@@ -95,7 +98,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     _servoTimer?.cancel();
     connection?.close();
     // Restore all orientations when leaving the screen
-    OrientationService.restoreAllOrientations();
+    orientation.OrientationService.restoreAllOrientations();
     super.dispose();
   }
 
@@ -132,38 +135,121 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
   // Video feed methods
   Future<void> _initializeVideoFeed() async {
-    if (_isVideoInitialized || _isVideoInitializing) {
-      return; // Prevent multiple initializations
+    // Don't initialize if we're already initializing, already initialized,
+    // or if network operations are paused during critical Bluetooth operations
+    if (_isVideoInitialized ||
+        _isVideoInitializing ||
+        _pauseNetworkOperations) {
+      print(
+        'Video initialization skipped: ${_isVideoInitialized
+            ? 'Already initialized'
+            : _isVideoInitializing
+            ? 'Already initializing'
+            : 'Network operations paused'}',
+      );
+      return;
     }
 
-    setState(() {
-      _isVideoInitializing = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isVideoInitializing = true;
+      });
+    }
 
     try {
-      // Try auto-discovery first, then fallback to configured server
-      await _videoService.initializeVideoFeedWithDiscovery();
+      print(
+        '🎥 Starting video initialization (Bluetooth connected: $isConnected)',
+      );
 
-      setState(() {
-        _isVideoInitialized = true;
-        _isVideoInitializing = false;
-      });
+      // Use a simpler initialization approach when Bluetooth is active
+      // This avoids the more aggressive network scanning that might interfere with Bluetooth
+      if (isConnected) {
+        // When Bluetooth is connected, we prioritize a quick, direct connection attempt
+        await _videoService.initializeVideoFeed();
+      } else {
+        // Only use direct connection when not in discovery mode
+        await _videoService.initializeVideoFeed();
+      }
+
+      if (mounted) {
+        setState(() {
+          _isVideoInitialized = true;
+          _isVideoInitializing = false;
+        });
+        print('✅ Video initialization successful');
+      }
     } catch (e) {
-      print('Video initialization error: $e');
-      setState(() {
-        _isVideoInitializing = false;
-      });
+      print('❌ Video initialization error: $e');
+      if (mounted) {
+        setState(() {
+          _isVideoInitializing = false;
+        });
+      }
       // Don't set _isVideoInitialized = true on error
+
+      // If video fails after Bluetooth is connected, retry once with a delay
+      // but only if Bluetooth is still connected and we're not in a paused state
+      if (isConnected && mounted && !_pauseNetworkOperations) {
+        print('📅 Scheduling video retry in 3 seconds');
+        Future.delayed(const Duration(seconds: 3), () {
+          if (!_isVideoInitialized &&
+              !_isVideoInitializing &&
+              mounted &&
+              isConnected &&
+              !_pauseNetworkOperations) {
+            print('🔄 Retrying video initialization');
+            _refreshVideoStream();
+          }
+        });
+      }
     }
   }
 
-  void _refreshVideoStream() {
-    setState(() {
-      _isVideoInitialized = false;
-      _isVideoInitializing = false;
-    });
-    _videoService.refreshVideoStream();
-    _initializeVideoFeed();
+  Future<void> _refreshVideoStream() async {
+    // Don't attempt refresh if network operations are paused
+    if (_pauseNetworkOperations) {
+      print('⚠️ Video refresh skipped: Network operations paused');
+      return;
+    }
+
+    print('🔄 Refreshing video stream');
+
+    // Show user feedback
+    if (mounted) {
+      _showSnackBar('Refreshing video connection...');
+    }
+
+    if (mounted) {
+      setState(() {
+        _isVideoInitialized = false;
+        _isVideoInitializing = true; // Mark as initializing first
+      });
+    }
+
+    try {
+      // First refresh the stream key
+      _videoService.refreshVideoStream();
+
+      // Short delay to allow stream to reset
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Then initialize the feed
+      await _initializeVideoFeed();
+
+      // Provide feedback on success
+      if (mounted) {
+        _showSnackBar('Video connection refreshed');
+      }
+    } catch (e) {
+      print('❌ Error refreshing video stream: $e');
+
+      if (mounted) {
+        setState(() {
+          _isVideoInitializing = false;
+        });
+        _showSnackBar('Failed to refresh video: $e');
+      }
+    }
   }
 
   void _switchControlMode(ControlMode mode) {
@@ -178,70 +264,174 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
       selectedDevice = device;
     });
 
-    try {
-      _showSnackBar('Connecting to ${device.name}...');
+    BluetoothConnection? tempConnection;
+    bool connectionSuccess = false;
+    int maxAttempts = 3;
+    int currentAttempt = 0;
 
-      connection = await CrossPlatformBluetoothService.connectToDevice(device);
+    while (!connectionSuccess && currentAttempt < maxAttempts) {
+      try {
+        currentAttempt++;
+        _showSnackBar(
+          'Connecting to ${device.name}... (Attempt $currentAttempt of $maxAttempts)',
+        );
 
-      setState(() {
-        isConnected = true;
-        isConnecting = false;
-      });
+        // Clear any existing connection
+        if (connection != null) {
+          await connection!.close().catchError(
+            (e) => print('Error closing existing connection: $e'),
+          );
+          connection = null;
+        }
 
-      // Notify parent about connection status change
-      if (widget.onConnectionStatusChanged != null) {
-        widget.onConnectionStatusChanged!(true);
+        // Ensure all network operations are paused during Bluetooth connection
+        // This helps prevent interference
+        _pauseNetworkOperations = true;
+
+        // Connect to the device with a reasonable timeout
+        tempConnection = await CrossPlatformBluetoothService.connectToDevice(
+          device,
+        ).timeout(const Duration(seconds: 15));
+
+        setState(() {
+          isConnected = true;
+          isConnecting = false;
+          connection = tempConnection;
+        });
+
+        // Allow network operations to resume
+        _pauseNetworkOperations = false;
+
+        // Notify parent about connection status change
+        if (widget.onConnectionStatusChanged != null) {
+          widget.onConnectionStatusChanged!(true);
+        }
+
+        _showSnackBar('Connected to ${device.name}');
+
+        // Switch to landscape mode for robot control
+        orientation.OrientationService.switchToLandscapeMode();
+
+        // Set initial configuration
+        await Future.delayed(const Duration(milliseconds: 500));
+        _sendCommand(
+          RobotControlService.globalSpeedCommand(globalSpeedMultiplier),
+        );
+        await Future.delayed(const Duration(milliseconds: 300));
+        _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
+
+        // Start monitoring connection
+        _startConnectionMonitoring();
+
+        // Initialize video feed AFTER Bluetooth connection is fully established
+        // But do it with a delay to ensure Bluetooth has stabilized
+        _showSnackBar('Bluetooth connection established successfully');
+
+        // Use Future.delayed to ensure Bluetooth operations are fully complete before starting camera
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted && isConnected) {
+            _showSnackBar('Now initializing camera connection...');
+            _initializeVideoFeed()
+                .then((_) {
+                  if (mounted && isConnected) {
+                    _showSnackBar('Camera connection initialized');
+                  }
+                })
+                .catchError((error) {
+                  if (mounted && isConnected) {
+                    _showSnackBar('Camera initialization error: $error');
+                    // Try once more after a longer delay
+                    Future.delayed(const Duration(seconds: 5), () {
+                      if (mounted && isConnected && !_isVideoInitialized) {
+                        _showSnackBar('Retrying camera connection...');
+                        _refreshVideoStream();
+                      }
+                    });
+                  }
+                });
+          }
+        });
+
+        // Connection was successful
+        connectionSuccess = true;
+      } catch (e) {
+        print('Failed to connect on attempt $currentAttempt: $e');
+
+        // Close any partial connection
+        if (tempConnection != null) {
+          try {
+            await tempConnection.close();
+          } catch (closeError) {
+            print('Error closing failed connection: $closeError');
+          }
+          tempConnection = null;
+        }
+
+        // Only show failure message if we've exhausted all attempts
+        if (currentAttempt >= maxAttempts) {
+          setState(() {
+            isConnecting = false;
+          });
+
+          _showSnackBar('Failed to connect: $e');
+
+          // Reset Bluetooth and try to re-initialize if needed
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted && !isConnected) {
+              _initializeBluetooth();
+            }
+          });
+        } else {
+          // Wait before retry
+          await Future.delayed(const Duration(seconds: 2));
+          _showSnackBar('Retrying connection...');
+        }
       }
-
-      _showSnackBar('Connected to ${device.name}');
-
-      // Switch to landscape mode for robot control
-      OrientationService.switchToLandscapeMode();
-
-      // Set initial configuration
-      await Future.delayed(Duration(milliseconds: 500));
-      _sendCommand(
-        RobotControlService.globalSpeedCommand(globalSpeedMultiplier),
-      );
-      await Future.delayed(Duration(milliseconds: 100));
-      _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
-
-      // Start monitoring connection
-      _startConnectionMonitoring();
-
-      // Initialize video feed AFTER Bluetooth connection is fully established
-      _showSnackBar('Initializing camera connection...');
-      await _initializeVideoFeed();
-      _showSnackBar('Camera connection initialized');
-    } catch (e) {
-      setState(() {
-        isConnecting = false;
-        isConnected = false;
-        connection = null;
-        selectedDevice = null;
-      });
-      _showSnackBar('Connection failed: ${e.toString()}');
-      print('Connection error: $e');
-      // Ensure we stay in portrait mode if connection fails
-      OrientationService.switchToPortraitMode();
     }
+
+    // Allow network operations regardless of connection outcome
+    _pauseNetworkOperations = false;
   }
 
   Timer? _connectionMonitor;
+  int _failedPingCount = 0;
+  static const int _maxPingFailures = 3;
 
   void _startConnectionMonitoring() {
+    _failedPingCount = 0;
     _connectionMonitor?.cancel();
-    _connectionMonitor = Timer.periodic(Duration(seconds: 5), (timer) {
+    _connectionMonitor = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (connection != null && isConnected) {
         // Send a ping command to check if connection is still alive
         try {
-          _sendCommand('PING');
+          // Check if we should pause ping during network operations
+          if (!_pauseNetworkOperations) {
+            _sendCommand('PING');
+            // Reset failed count on successful ping
+            if (_failedPingCount > 0) {
+              print(
+                '✅ Connection restored after $_failedPingCount failed pings',
+              );
+              _failedPingCount = 0;
+            }
+          }
         } catch (e) {
-          print('Connection monitoring failed: $e');
-          _handleConnectionLost();
-          timer.cancel();
+          _failedPingCount++;
+          print(
+            '⚠️ Connection monitoring ping failed ($_failedPingCount/$_maxPingFailures): $e',
+          );
+
+          // Only disconnect after multiple consecutive failures
+          if (_failedPingCount >= _maxPingFailures) {
+            print(
+              '❌ Connection lost after $_maxPingFailures consecutive failed pings',
+            );
+            _handleConnectionLost();
+            timer.cancel();
+          }
         }
       } else {
+        print('❌ Connection monitor stopping - connection no longer valid');
         timer.cancel();
       }
     });
@@ -249,10 +439,22 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
   void _handleConnectionLost() {
     if (mounted) {
+      // Avoid network operations during reconnection attempts
+      _pauseNetworkOperations = true;
+
       setState(() {
         isConnected = false;
-        connection = null;
-        selectedDevice = null;
+
+        // Try to properly close the connection
+        if (connection != null) {
+          try {
+            connection!.close().catchError(
+              (e) => print('Error closing connection: $e'),
+            );
+          } catch (_) {}
+          connection = null;
+        }
+
         // Reset video state when connection is lost
         _isVideoInitialized = false;
         _isVideoInitializing = false;
@@ -264,8 +466,40 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
       }
 
       _showSnackBar('Connection lost to robot');
+
       // Switch back to portrait mode when connection is lost
-      OrientationService.switchToPortraitMode();
+      orientation.OrientationService.switchToPortraitMode();
+
+      // Store the device to potentially reconnect
+      final lostDevice = selectedDevice;
+
+      // If we have a device to reconnect to, try to reconnect after a delay
+      if (lostDevice != null) {
+        print('📱 Planning reconnection attempt to ${lostDevice.name}');
+
+        // Delay before trying to reconnect
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted &&
+              !isConnected &&
+              !isConnecting &&
+              selectedDevice == null) {
+            print('🔄 Attempting to reconnect to ${lostDevice.name}');
+            _showSnackBar('Attempting to reconnect to ${lostDevice.name}...');
+            _connectToDevice(lostDevice);
+          } else {
+            print(
+              '⚠️ Reconnection cancelled - state changed or already connecting',
+            );
+          }
+        });
+      }
+
+      // Allow network operations to resume after a delay
+      Future.delayed(const Duration(seconds: 8), () {
+        if (mounted) {
+          _pauseNetworkOperations = false;
+        }
+      });
     }
   }
 
@@ -289,7 +523,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
 
       _showSnackBar('Disconnected');
       // Switch back to portrait mode when manually disconnecting
-      OrientationService.switchToPortraitMode();
+      orientation.OrientationService.switchToPortraitMode();
     }
   }
 
@@ -544,7 +778,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     }
 
     // Return the actual video feed section
-    return VideoFeedSection(
+    return video.VideoFeedSection(
       streamUrl: _videoService.streamUrl,
       isLoadingStream: _videoService.isLoadingStream || _isVideoInitializing,
       errorMessage: _videoService.errorMessage,

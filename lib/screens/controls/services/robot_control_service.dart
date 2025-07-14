@@ -1,99 +1,138 @@
-import 'dart:convert';
+// services/orientation_service.dart
+import 'package:flutter/services.dart';
 
+
+// services/robot_control_service.dart
 class RobotControlService {
+  // Default servo names for the 6-servo arm
   static const List<String> defaultServoNames = [
-    'Base (Waist)', // ID 0 - Pin 12
-    'Shoulder', // ID 1 - Pin 13
-    'Elbow', // ID 2 - Pin 18
-    'Wrist Pitch', // ID 3 - Pin 19
-    'Wrist Roll', // ID 4 - Pin 21
-    'Gripper', // ID 5 - Pin 22
+    'Base',
+    'Shoulder', 
+    'Elbow',
+    'Wrist R',
+    'Wrist T',
+    'Gripper'
   ];
 
-  static const List<String> defaultPoses = ['Home', 'Pick', 'Place', 'Rest'];
+  // Default poses for the robot arm
+  static const List<String> defaultPoses = [
+    'Home',
+    'Pickup',
+    'Place', 
+    'Rest',
+    'Extended'
+  ];
 
-  /// Send servo angle command
-  static String servoCommand(int servoId, int angle) {
-    return 'S:$servoId,$angle';
-  }
+  // Motor control commands
+  static String forwardCommand(int speed) => 'FORWARD:$speed';
+  static String backwardCommand(int speed) => 'BACKWARD:$speed';
+  static String leftCommand(int speed) => 'LEFT:$speed';
+  static String rightCommand(int speed) => 'RIGHT:$speed';
+  static String tankDriveCommand(int leftSpeed, int rightSpeed) => 'TANK:$leftSpeed,$rightSpeed';
+  static String stopCommand() => 'STOP';
 
-  /// Send pose command
+  // Servo control commands
+  static String servoCommand(int servoId, int angle) => 'SERVO${servoId + 1}:$angle';
+  static String armHomeCommand() => 'ARM_HOME';
   static String poseCommand(String pose) {
-    return 'P:$pose';
+    final poses = defaultPoses;
+    final index = poses.indexOf(pose);
+    return index >= 0 ? 'ARM_PRESET:${index + 1}' : 'ARM_HOME';
   }
+  static String gripperOpenCommand() => 'GRIPPER_OPEN';
+  static String gripperCloseCommand() => 'GRIPPER_CLOSE';
 
-  /// Send global speed command
-  static String globalSpeedCommand(int speed) {
-    return 'G:$speed';
-  }
+  // System commands
+  static String globalSpeedCommand(int speed) => 'SPEED:$speed';
+  static String diagnosticsCommand(bool enabled) => 'DEBUG:${enabled ? 1 : 0}';
+  static String statusCommand() => 'STATUS';
+  static String emergencyStopCommand() => 'EMERGENCY';
+  static String homeCommand() => 'ARM_HOME';
+  static String motorTestCommand() => 'TEST_MOTORS';
+  static String servoTestCommand() => 'TEST_SERVOS';
+  static String pingCommand() => 'PING';
 
-  /// Send diagnostics toggle command
-  static String diagnosticsCommand(bool enabled) {
-    return 'D:${enabled ? 1 : 0}';
-  }
+  // Sensor commands
+  static String sensorStatusCommand() => 'SENSOR_STATUS';
+  static String sensorsEnableCommand() => 'SENSORS_ENABLE';
+  static String sensorsDisableCommand() => 'SENSORS_DISABLE';
+  static String collisionDistanceCommand(int distance) => 'COLLISION_DIST:$distance';
+  static String testSensorsCommand() => 'TEST_SENSORS';
+  static String calibrateSensorsCommand() => 'CALIBRATE_SENSORS';
 
-  /// Send motor test command
-  static String motorTestCommand() {
-    return 'X';
-  }
-
-  /// Send status request command
-  static String statusCommand() {
-    return 'V';
-  }
-
-  /// Send tank drive command
-  static String tankDriveCommand(int leftSpeed, int rightSpeed) {
-    return 'T:$leftSpeed,$rightSpeed';
-  }
-
-  /// Send home command
-  static String homeCommand() {
-    return 'H';
-  }
-
-  /// Send emergency stop command
-  static String emergencyStopCommand() {
-    return 'E';
-  }
-
-  /// Send ping command for connection monitoring
-  static String pingCommand() {
-    return 'PING';
-  }
-
-  /// Convert command to bytes for transmission
-  static List<int> commandToBytes(String command) {
-    return utf8.encode('$command\n');
-  }
-
-  /// Validate servo angle (0-180 degrees)
-  static bool isValidServoAngle(double angle) {
-    return angle >= 0 && angle <= 180;
-  }
-
-  /// Validate motor speed (-100 to 100 percent)
-  static bool isValidMotorSpeed(int speed) {
+  // Command validation
+  static bool isValidSpeed(int speed) {
     return speed >= -100 && speed <= 100;
   }
 
-  /// Validate global speed multiplier (20-100 percent)
-  static bool isValidGlobalSpeed(int speed) {
-    return speed >= 20 && speed <= 100;
+  static bool isValidAngle(int angle) {
+    return angle >= 0 && angle <= 180;
   }
 
-  /// Clamp servo angle to valid range
-  static double clampServoAngle(double angle) {
-    return angle.clamp(0.0, 180.0);
+  static bool isValidServoId(int servoId) {
+    return servoId >= 0 && servoId < 6;
   }
 
-  /// Clamp motor speed to valid range
-  static int clampMotorSpeed(int speed) {
-    return speed.clamp(-100, 100);
+  // Parse response commands
+  static Map<String, dynamic>? parseStatusResponse(String response) {
+    try {
+      if (response.startsWith('STATUS_')) {
+        final parts = response.split(':');
+        if (parts.length >= 2) {
+          return {
+            'type': parts[0],
+            'data': parts.sublist(1).join(':'),
+            'timestamp': DateTime.now().toIso8601String(),
+          };
+        }
+      }
+    } catch (e) {
+      print('Error parsing status response: $e');
+    }
+    return null;
   }
 
-  /// Clamp global speed to valid range
-  static int clampGlobalSpeed(int speed) {
-    return speed.clamp(20, 100);
+  static Map<String, dynamic>? parseSensorResponse(String response) {
+    try {
+      if (response.startsWith('SENSOR_STATUS:')) {
+        final jsonStr = response.substring('SENSOR_STATUS:'.length);
+        // This would need a JSON parser in a real implementation
+        return {
+          'type': 'sensor_status',
+          'raw': jsonStr,
+          'timestamp': DateTime.now().toIso8601String(),
+        };
+      }
+    } catch (e) {
+      print('Error parsing sensor response: $e');
+    }
+    return null;
+  }
+}
+
+
+
+class OrientationService {
+  static Future<void> switchToLandscapeMode() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  static Future<void> switchToPortraitMode() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
+
+  static Future<void> restoreAllOrientations() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 }
