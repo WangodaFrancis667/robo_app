@@ -1,27 +1,25 @@
-/**********************************************************************
- *  command_processor.h - Command Processing System
- *  Handles parsing and execution of all robot commands
- *********************************************************************/
 
 #ifndef COMMAND_PROCESSOR_H
 #define COMMAND_PROCESSOR_H
 
 #include "bluetooth_handler.h"
 #include "config.h"
+#include "memory_optimization.h"
 #include "motor_controller.h"
+#include "sensor_status.h"
 #include "servo_arm.h"
 #include "system_status.h"
 
 class CommandProcessor {
 private:
-  static Command commandQueue[10];
+  static Command commandQueue[COMMAND_QUEUE_SIZE]; // Reduced queue size
   static int queueHead;
   static int queueTail;
   static int queueSize;
   static unsigned long lastProcessTime;
 
   // Private helper methods
-  static bool parseCommand(const String &input, Command &cmd);
+  static bool parseCommand(const char *input, Command &cmd);
   static void executeCommand(const Command &cmd);
   static bool isQueueFull();
   static bool isQueueEmpty();
@@ -34,114 +32,131 @@ public:
   static void init();
 
   // Add command to queue
-  static bool addCommand(const String &commandString);
+  static bool addCommand(const char *commandString);
+  static bool addCommand(const String &commandString); // Backward compatibility
 
   // Process command queue
   static void processQueue();
 
   // Process single command immediately
-  static void processImmediate(const String &commandString);
+  static void processImmediate(const char *commandString);
 
   // Queue management
   static void clearQueue();
   static int getQueueCount();
-  static void getQueueStatus(String &status);
+  static void getQueueStatus(char *buffer, size_t bufferSize);
 
   // Command validation
-  static bool isValidCommand(const String &commandString);
+  static bool isValidCommand(const char *commandString);
   static void sendCommandHelp();
 };
 
-// Static member variable definitions
-Command CommandProcessor::commandQueue[10];
+// Implementation
+Command CommandProcessor::commandQueue[COMMAND_QUEUE_SIZE];
 int CommandProcessor::queueHead = 0;
 int CommandProcessor::queueTail = 0;
 int CommandProcessor::queueSize = 0;
 unsigned long CommandProcessor::lastProcessTime = 0;
 
-// Implementation
 void CommandProcessor::init() {
-  DEBUG_PRINTLN("📋 Initializing Command Processor...");
+  DEBUG_PRINTLN_P("Initializing Command Processor...");
 
   // Clear queue
   clearQueue();
   lastProcessTime = millis();
 
-  DEBUG_PRINTLN("✅ Command Processor initialized");
+  DEBUG_PRINTLN_P("Command Processor initialized");
 }
 
-bool CommandProcessor::addCommand(const String &commandString) {
+bool CommandProcessor::addCommand(const char *commandString) {
   if (isQueueFull()) {
-    DEBUG_PRINTLN("⚠ Command queue full, dropping command");
-    BluetoothHandler::sendMessage("ERROR_QUEUE_FULL");
+    DEBUG_PRINTLN_P("Command queue full, dropping command");
+    sendBluetoothMessage("ERROR_QUEUE_FULL");
     return false;
   }
 
   Command cmd;
   if (!parseCommand(commandString, cmd)) {
-    DEBUG_PRINTLN("❌ Invalid command format: " + commandString);
-    BluetoothHandler::sendResponse(commandString, false);
+    DEBUG_PRINTLN_P("Invalid command format");
     return false;
   }
 
   // Add to queue
   commandQueue[queueTail] = cmd;
-  queueTail = (queueTail + 1) % 10;
+  queueTail = (queueTail + 1) % COMMAND_QUEUE_SIZE;
   queueSize++;
 
-  DEBUG_PRINTLN("📥 Command queued: " + cmd.type);
   return true;
 }
 
+// Backward compatibility wrapper
+bool CommandProcessor::addCommand(const String &commandString) {
+  return addCommand(commandString.c_str());
+}
+
 void CommandProcessor::processQueue() {
-  // Process one command per loop to avoid blocking
-  if (!isQueueEmpty() && (millis() - lastProcessTime > 10)) {
+  // Process fewer commands per loop to save memory
+  int commandsProcessed = 0;
+  const int maxCommandsPerLoop = 2; // Reduced from 3
+
+  while (!isQueueEmpty() && commandsProcessed < maxCommandsPerLoop) {
     Command cmd = commandQueue[queueHead];
-    queueHead = (queueHead + 1) % 10;
+    queueHead = (queueHead + 1) % COMMAND_QUEUE_SIZE;
     queueSize--;
 
     executeCommand(cmd);
+    commandsProcessed++;
     lastProcessTime = millis();
   }
 }
 
-void CommandProcessor::processImmediate(const String &commandString) {
+void CommandProcessor::processImmediate(const char *commandString) {
   Command cmd;
   if (parseCommand(commandString, cmd)) {
     executeCommand(cmd);
   }
 }
 
-bool CommandProcessor::parseCommand(const String &input, Command &cmd) {
-  String cleanInput = input;
-  cleanInput.trim();
-  cleanInput.toUpperCase();
+bool CommandProcessor::parseCommand(const char *input, Command &cmd) {
+  // Use stack-based string for parsing
+  TempString<MAX_COMMAND_LENGTH> tempInput;
+  strncpy(tempInput.get(), input, tempInput.size() - 1);
+  tempInput.get()[tempInput.size() - 1] = '\0';
+
+  // Convert to uppercase in place
+  char *str = tempInput.get();
+  for (int i = 0; str[i]; i++) {
+    str[i] = toupper(str[i]);
+  }
 
   cmd.timestamp = millis();
 
-  // Handle commands with parameters
-  int colonIndex = cleanInput.indexOf(':');
-  int commaIndex = cleanInput.indexOf(',');
+  // Parse command components
+  char *colonPos = strchr(str, ':');
+  char *commaPos = strchr(str, ',');
 
-  if (colonIndex > 0) {
-    cmd.type = cleanInput.substring(0, colonIndex);
-    String params = cleanInput.substring(colonIndex + 1);
+  if (colonPos) {
+    *colonPos = '\0'; // Split at colon
+    strncpy(cmd.type, str, sizeof(cmd.type) - 1);
+    cmd.type[sizeof(cmd.type) - 1] = '\0';
 
-    if (commaIndex > colonIndex) {
-      // Two parameters (e.g., TANK:50,30)
-      cmd.parameter = params.substring(0, commaIndex - colonIndex - 1);
-      cmd.value1 = params.substring(0, commaIndex - colonIndex - 1).toInt();
-      cmd.value2 = params.substring(commaIndex - colonIndex).toInt();
+    char *params = colonPos + 1;
+    if (commaPos && commaPos > colonPos) {
+      *commaPos = '\0'; // Split at comma
+      strncpy(cmd.parameter, params, sizeof(cmd.parameter) - 1);
+      cmd.parameter[sizeof(cmd.parameter) - 1] = '\0';
+      cmd.value1 = atoi(params);
+      cmd.value2 = atoi(commaPos + 1);
     } else {
-      // One parameter (e.g., FORWARD:50)
-      cmd.parameter = params;
-      cmd.value1 = params.toInt();
+      strncpy(cmd.parameter, params, sizeof(cmd.parameter) - 1);
+      cmd.parameter[sizeof(cmd.parameter) - 1] = '\0';
+      cmd.value1 = atoi(params);
       cmd.value2 = 0;
     }
   } else {
-    // No parameters (e.g., STOP, HOME)
-    cmd.type = cleanInput;
-    cmd.parameter = "";
+    strncpy(cmd.type, str, sizeof(cmd.type) - 1);
+    cmd.type[sizeof(cmd.type) - 1] = '\0';
+    cmd.parameter[0] = '\0';
     cmd.value1 = 0;
     cmd.value2 = 0;
   }
@@ -150,16 +165,19 @@ bool CommandProcessor::parseCommand(const String &input, Command &cmd) {
 }
 
 void CommandProcessor::executeCommand(const Command &cmd) {
-  DEBUG_PRINTLN("⚡ Executing: " + cmd.type);
+  DEBUG_PRINT_P("⚡ Executing: ");
+  DEBUG_PRINTLN(cmd.type);
 
   // Route command to appropriate subsystem
-  if (cmd.type == CMD_FORWARD || cmd.type == CMD_BACKWARD ||
-      cmd.type == CMD_LEFT || cmd.type == CMD_RIGHT || cmd.type == CMD_TANK ||
-      cmd.type == CMD_STOP) {
+  if (strcmp(cmd.type, CMD_FORWARD) == 0 ||
+      strcmp(cmd.type, CMD_BACKWARD) == 0 || strcmp(cmd.type, CMD_LEFT) == 0 ||
+      strcmp(cmd.type, CMD_RIGHT) == 0 || strcmp(cmd.type, CMD_TANK) == 0 ||
+      strcmp(cmd.type, CMD_STOP) == 0) {
     processMotorCommand(cmd);
 
-  } else if (cmd.type.startsWith("SERVO") || cmd.type.startsWith("ARM") ||
-             cmd.type.startsWith("GRIPPER")) {
+  } else if (strncmp(cmd.type, "SERVO", 5) == 0 ||
+             strncmp(cmd.type, "ARM", 3) == 0 ||
+             strncmp(cmd.type, "GRIPPER", 7) == 0) {
     processServoCommand(cmd);
 
   } else {
@@ -170,72 +188,81 @@ void CommandProcessor::executeCommand(const Command &cmd) {
 void CommandProcessor::processMotorCommand(const Command &cmd) {
   // Check collision avoidance before executing motor commands
   if (!CollisionAvoidance::isMovementSafe(cmd.type, cmd.value1)) {
-    BluetoothHandler::sendMessage("BLOCKED_BY_COLLISION_AVOIDANCE:" + cmd.type);
+    // Use message buffer for blocked message
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH,
+                 PSTR("BLOCKED_BY_COLLISION_AVOIDANCE:%s"), cmd.type);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
     BluetoothHandler::sendResponse(cmd.type, false);
     return;
   }
 
-  if (cmd.type == CMD_FORWARD) {
+  if (strcmp(cmd.type, CMD_FORWARD) == 0) {
     int speed = constrain(cmd.value1, 0, 100);
     // Apply collision avoidance speed adjustment
     speed = CollisionAvoidance::adjustSpeedForSafety(speed, true);
     MotorController::moveForward(speed);
     BluetoothHandler::sendResponse(CMD_FORWARD);
 
-  } else if (cmd.type == CMD_BACKWARD) {
+  } else if (strcmp(cmd.type, CMD_BACKWARD) == 0) {
     int speed = constrain(cmd.value1, 0, 100);
     // Apply collision avoidance speed adjustment
     speed = CollisionAvoidance::adjustSpeedForSafety(speed, false);
     MotorController::moveBackward(speed);
     BluetoothHandler::sendResponse(CMD_BACKWARD);
 
-  } else if (cmd.type == CMD_LEFT) {
+  } else if (strcmp(cmd.type, CMD_LEFT) == 0) {
     int speed = constrain(cmd.value1, 0, 100);
     MotorController::turnLeft(speed);
     BluetoothHandler::sendResponse(CMD_LEFT);
 
-  } else if (cmd.type == CMD_RIGHT) {
+  } else if (strcmp(cmd.type, CMD_RIGHT) == 0) {
     int speed = constrain(cmd.value1, 0, 100);
     MotorController::turnRight(speed);
     BluetoothHandler::sendResponse(CMD_RIGHT);
 
-  } else if (cmd.type == CMD_TANK) {
+  } else if (strcmp(cmd.type, CMD_TANK) == 0) {
     int leftSpeed = constrain(cmd.value1, -100, 100);
     int rightSpeed = constrain(cmd.value2, -100, 100);
     MotorController::tankDrive(leftSpeed, rightSpeed);
     BluetoothHandler::sendResponse(CMD_TANK);
 
-  } else if (cmd.type == CMD_STOP) {
+  } else if (strcmp(cmd.type, CMD_STOP) == 0) {
     MotorController::stopAll();
     BluetoothHandler::sendResponse(CMD_STOP);
   }
 }
 
 void CommandProcessor::processServoCommand(const Command &cmd) {
-  if (cmd.type == CMD_ARM_HOME) {
+  if (strcmp(cmd.type, CMD_ARM_HOME) == 0) {
     ServoArm::moveToHome();
     BluetoothHandler::sendResponse(CMD_ARM_HOME);
 
-  } else if (cmd.type == CMD_ARM_PRESET) {
+  } else if (strcmp(cmd.type, CMD_ARM_PRESET) == 0) {
     int preset = constrain(cmd.value1, 1, 5);
     ServoArm::moveToPreset(preset);
     BluetoothHandler::sendResponse(CMD_ARM_PRESET);
 
-  } else if (cmd.type == CMD_GRIPPER_OPEN) {
+  } else if (strcmp(cmd.type, CMD_GRIPPER_OPEN) == 0) {
     ServoArm::openGripper();
     BluetoothHandler::sendResponse(CMD_GRIPPER_OPEN);
 
-  } else if (cmd.type == CMD_GRIPPER_CLOSE) {
+  } else if (strcmp(cmd.type, CMD_GRIPPER_CLOSE) == 0) {
     ServoArm::closeGripper();
     BluetoothHandler::sendResponse(CMD_GRIPPER_CLOSE);
 
-  } else if (cmd.type.startsWith("SERVO")) {
+  } else if (strncmp(cmd.type, "SERVO", 5) == 0) {
     // Parse servo command (e.g., SERVO1:90, SERVO_BASE:45)
     int servoIndex = -1;
 
-    if (cmd.type == "SERVO1" || cmd.type == "SERVO_BASE") {
+    if (strcmp(cmd.type, "SERVO1") == 0 ||
+        strcmp(cmd.type, "SERVO_BASE") == 0) {
       servoIndex = SERVO_BASE_IDX;
-    } else if (cmd.type == "SERVO2" || cmd.type == "SERVO_SHOULDER") {
+    } else if (strcmp(cmd.type, "SERVO2") == 0 ||
+               strcmp(cmd.type, "SERVO_SHOULDER") == 0) {
       servoIndex = SERVO_SHOULDER_IDX;
     } else if (cmd.type == "SERVO3" || cmd.type == "SERVO_ELBOW") {
       servoIndex = SERVO_ELBOW_IDX;
@@ -259,26 +286,61 @@ void CommandProcessor::processServoCommand(const Command &cmd) {
 
 void CommandProcessor::processSystemCommand(const Command &cmd) {
   if (cmd.type == CMD_STATUS) {
-    String motorStatus, servoStatus, systemStatus;
-    MotorController::getStatus(motorStatus);
-    ServoArm::getStatus(servoStatus);
-    SystemStatus::getStatus(systemStatus);
+    // Use char buffers instead of String objects for better memory efficiency
+    char motorStatus[64], servoStatus[64], systemStatus[64];
+    MotorController::getStatus(motorStatus, sizeof(motorStatus));
+    ServoArm::getStatus(servoStatus, sizeof(servoStatus));
+    SystemStatus::getStatus(systemStatus, sizeof(systemStatus));
 
-    BluetoothHandler::sendMessage("STATUS_MOTORS:" + motorStatus);
-    BluetoothHandler::sendMessage("STATUS_SERVOS:" + servoStatus);
-    BluetoothHandler::sendMessage("STATUS_SYSTEM:" + systemStatus);
+    // Send status messages using buffer formatting
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("STATUS_MOTORS:%s"),
+                 motorStatus);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("STATUS_SERVOS:%s"),
+                 servoStatus);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("STATUS_SYSTEM:%s"),
+                 systemStatus);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
+
     BluetoothHandler::sendResponse(CMD_STATUS);
 
   } else if (cmd.type == CMD_SPEED) {
     int speed = constrain(cmd.value1, 20, 100);
     MotorController::setGlobalSpeed(speed);
-    BluetoothHandler::sendMessage("SPEED_SET:" + String(speed));
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("SPEED_SET:%d"), speed);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
     BluetoothHandler::sendResponse(CMD_SPEED);
 
   } else if (cmd.type == CMD_DEBUG) {
     // Toggle debug mode
     SystemStatus::setDebugMode(cmd.value1 == 1);
-    BluetoothHandler::sendMessage("DEBUG_MODE:" + String(cmd.value1));
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("DEBUG_MODE:%d"), cmd.value1);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
     BluetoothHandler::sendResponse(CMD_DEBUG);
 
   } else if (cmd.type == CMD_EMERGENCY) {
@@ -310,7 +372,13 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
   } else if (cmd.type == "SERVO_SPEED") {
     int speed = constrain(cmd.value1, SERVO_SPEED_SLOW, SERVO_SPEED_FAST);
     ServoArm::setMovementSpeed(speed);
-    BluetoothHandler::sendMessage("SERVO_SPEED_SET:" + String(speed));
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("SERVO_SPEED_SET:%d"), speed);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
     BluetoothHandler::sendResponse("SERVO_SPEED");
 
   } else if (cmd.type == "ARM_ENABLE") {
@@ -342,13 +410,29 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
   } else if (cmd.type == CMD_COLLISION_DISTANCE) {
     float distance = constrain(cmd.value1, 5, 100);
     SensorManager::setCollisionDistance(distance);
-    BluetoothHandler::sendMessage("COLLISION_DISTANCE_SET:" + String(distance));
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      char distStr[8];
+      formatFloat(distance, distStr, sizeof(distStr), 1);
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("COLLISION_DISTANCE_SET:%s"),
+                 distStr);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
     BluetoothHandler::sendResponse(CMD_COLLISION_DISTANCE);
 
   } else if (cmd.type == "COLLISION_AGGRESSIVENESS") {
     int level = constrain(cmd.value1, 1, 3);
     CollisionAvoidance::setAggressiveness(level);
-    BluetoothHandler::sendMessage("AGGRESSIVENESS_SET:" + String(level));
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("AGGRESSIVENESS_SET:%d"),
+                 level);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
     BluetoothHandler::sendResponse("COLLISION_AGGRESSIVENESS");
 
   } else if (cmd.type == "SENSOR_DETAILED") {
@@ -364,8 +448,15 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
     BluetoothHandler::sendResponse("CALIBRATE_SENSORS");
 
   } else {
-    DEBUG_PRINTLN("❌ Unknown command: " + cmd.type);
-    BluetoothHandler::sendMessage("ERROR_UNKNOWN_COMMAND:" + cmd.type);
+    DEBUG_PRINT_P("❌ Unknown command: ");
+    DEBUG_PRINTLN(cmd.type);
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("ERROR_UNKNOWN_COMMAND:%s"),
+                 cmd.type);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
   }
 }
 
@@ -378,15 +469,16 @@ void CommandProcessor::clearQueue() {
 
 int CommandProcessor::getQueueCount() { return queueSize; }
 
-void CommandProcessor::getQueueStatus(String &status) {
-  status = "Queue: " + String(queueSize) + "/10 commands";
+void CommandProcessor::getQueueStatus(char *buffer, size_t bufferSize) {
+  snprintf_P(buffer, bufferSize, PSTR("Queue: %d/%d commands"), queueSize,
+             COMMAND_QUEUE_SIZE);
 }
 
-bool CommandProcessor::isQueueFull() { return queueSize >= 10; }
+bool CommandProcessor::isQueueFull() { return queueSize >= COMMAND_QUEUE_SIZE; }
 
 bool CommandProcessor::isQueueEmpty() { return queueSize == 0; }
 
-bool CommandProcessor::isValidCommand(const String &commandString) {
+bool CommandProcessor::isValidCommand(const char *commandString) {
   Command cmd;
   return parseCommand(commandString, cmd);
 }
@@ -415,19 +507,6 @@ void CommandProcessor::sendCommandHelp() {
   BluetoothHandler::sendMessage("  SERVO6:angle     - Control gripper");
   BluetoothHandler::sendMessage("  GRIPPER_OPEN     - Open gripper");
   BluetoothHandler::sendMessage("  GRIPPER_CLOSE    - Close gripper");
-  BluetoothHandler::sendMessage("");
-  BluetoothHandler::sendMessage("SENSOR COMMANDS:");
-  BluetoothHandler::sendMessage(
-      "  SENSOR_STATUS    - Get current sensor status");
-  BluetoothHandler::sendMessage(
-      "  SENSOR_DETAILED  - Get detailed sensor data");
-  BluetoothHandler::sendMessage(
-      "  SENSORS_ENABLE   - Enable collision avoidance");
-  BluetoothHandler::sendMessage(
-      "  SENSORS_DISABLE  - Disable collision avoidance");
-  BluetoothHandler::sendMessage("  COLLISION_DIST:cm- Set collision distance");
-  BluetoothHandler::sendMessage("  TEST_SENSORS     - Test all sensors");
-  BluetoothHandler::sendMessage("  CALIBRATE_SENSORS- Calibrate sensors");
   BluetoothHandler::sendMessage("");
   BluetoothHandler::sendMessage("SYSTEM COMMANDS:");
   BluetoothHandler::sendMessage("  STATUS           - Get system status");

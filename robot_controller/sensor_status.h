@@ -6,9 +6,13 @@
 #ifndef SENSOR_STATUS_H
 #define SENSOR_STATUS_H
 
-#include "config.h"
-#include "sensor_manager.h"
 #include "collision_avoidance.h"
+#include "config.h"
+#include "memory_optimization.h"
+#include "sensor_manager.h"
+
+// Forward declaration to avoid circular dependency
+extern void sendBluetoothMessage(const char *message);
 
 class SensorStatusManager {
 private:
@@ -18,56 +22,58 @@ private:
   static bool autoSendEnabled;
   static int statusUpdateInterval;
   static int statusSendInterval;
-  
+
   // Private helper methods
   static void updateCurrentStatus();
   static String formatStatusForFlutter();
   static String formatDetailedStatus();
   static void sendStatusUpdate();
-  
+
 public:
   // Initialize sensor status manager
   static void init();
-  
+
   // Update - call this in main loop
   static void update();
-  
+
   // Status management
   static void enableAutoSend();
   static void disableAutoSend();
   static bool isAutoSendEnabled();
-  
+
   // Manual status requests
   static void sendStatusNow();
   static void sendDetailedStatus();
-  static String getStatusJSON();
-  static String getDetailedStatusJSON();
-  
+  static void getStatusBuffer(char *buffer, size_t bufferSize);
+  static void getDetailedStatusBuffer(char *buffer, size_t bufferSize);
+
   // Configuration
   static void setUpdateInterval(int intervalMs);
   static void setSendInterval(int intervalMs);
   static int getUpdateInterval();
   static int getSendInterval();
-  
+
   // Status data access
   static SensorStatus getCurrentStatus();
   static float getFrontDistance();
   static float getRearDistance();
   static bool hasObstacles();
   static bool hasCollisionRisk();
-  
+
   // Flutter app specific formatting
-  static String formatForFlutterDashboard();
-  static String formatCollisionWarning();
-  static String formatSensorHealthCheck();
-  
+  static void formatForFlutterDashboard(char *buffer, size_t bufferSize);
+  static void formatCollisionWarning(const char *sensor, float distance,
+                                     char *buffer, size_t bufferSize);
+  static void formatSensorHealthCheck(char *buffer, size_t bufferSize);
+
   // Diagnostics
   static void sendDiagnosticData();
   static void testSensorCommunication();
 };
 
 // Implementation
-SensorStatus SensorStatusManager::currentStatus = {0.0, 0.0, false, false, false, false, false, 0};
+SensorStatus SensorStatusManager::currentStatus = {0.0,   0.0,   false, false,
+                                                   false, false, false, 0};
 unsigned long SensorStatusManager::lastStatusUpdate = 0;
 unsigned long SensorStatusManager::lastStatusSent = 0;
 bool SensorStatusManager::autoSendEnabled = true;
@@ -75,8 +81,8 @@ int SensorStatusManager::statusUpdateInterval = 100; // Update every 100ms
 int SensorStatusManager::statusSendInterval = 500;   // Send every 500ms
 
 void SensorStatusManager::init() {
-  DEBUG_PRINTLN("📊 Initializing Sensor Status Manager...");
-  
+  DEBUG_PRINTLN_P("Initializing Sensor Status Manager...");
+
   // Initialize status structure
   currentStatus.frontDistance = 0.0;
   currentStatus.rearDistance = 0.0;
@@ -86,26 +92,32 @@ void SensorStatusManager::init() {
   currentStatus.rearCollisionRisk = false;
   currentStatus.sensorsActive = true;
   currentStatus.lastUpdate = millis();
-  
+
   lastStatusUpdate = millis();
   lastStatusSent = millis();
+
+#if SERIAL_TESTING_MODE
+  autoSendEnabled = false; // Disable auto-send in testing mode to reduce spam
+#else
   autoSendEnabled = true;
-  
-  DEBUG_PRINTLN("✅ Sensor Status Manager initialized");
-  DEBUG_PRINTLN("📊 Auto-send: " + String(autoSendEnabled ? "ENABLED" : "DISABLED"));
-  DEBUG_PRINTLN("📊 Update interval: " + String(statusUpdateInterval) + "ms");
-  DEBUG_PRINTLN("📊 Send interval: " + String(statusSendInterval) + "ms");
+#endif
+
+  // Use the intervals defined in config.h
+  statusUpdateInterval = 100;
+  statusSendInterval = STATUS_SEND_INTERVAL;
+
+  DEBUG_PRINTLN_P("Sensor Status Manager initialized");
 }
 
 void SensorStatusManager::update() {
   unsigned long currentTime = millis();
-  
+
   // Update status at specified interval
   if (currentTime - lastStatusUpdate >= statusUpdateInterval) {
     updateCurrentStatus();
     lastStatusUpdate = currentTime;
   }
-  
+
   // Send status updates if auto-send is enabled
   if (autoSendEnabled && (currentTime - lastStatusSent >= statusSendInterval)) {
     sendStatusUpdate();
@@ -115,7 +127,7 @@ void SensorStatusManager::update() {
 
 void SensorStatusManager::updateCurrentStatus() {
   SensorManager::getSensorStatus(currentStatus);
-  
+
   // Add collision avoidance status
   if (!CollisionAvoidance::isEnabled()) {
     currentStatus.frontCollisionRisk = false;
@@ -133,9 +145,7 @@ void SensorStatusManager::disableAutoSend() {
   DEBUG_PRINTLN("📊 Auto-send status updates DISABLED");
 }
 
-bool SensorStatusManager::isAutoSendEnabled() {
-  return autoSendEnabled;
-}
+bool SensorStatusManager::isAutoSendEnabled() { return autoSendEnabled; }
 
 void SensorStatusManager::sendStatusNow() {
   updateCurrentStatus();
@@ -144,130 +154,123 @@ void SensorStatusManager::sendStatusNow() {
 
 void SensorStatusManager::sendDetailedStatus() {
   updateCurrentStatus();
-  
-  extern void sendBluetoothMessage(const String& message);
-  sendBluetoothMessage("SENSOR_DETAILED:" + getDetailedStatusJSON());
+
+  if (MessageBuffer::isAvailable()) {
+    char *buffer = MessageBuffer::getBuffer();
+    getDetailedStatusBuffer(buffer, MAX_MESSAGE_LENGTH);
+
+    TempString<MAX_MESSAGE_LENGTH + 20> message;
+    message.printf_P(PSTR("SENSOR_DETAILED:%s"), buffer);
+
+    sendBluetoothMessage(message.get());
+    MessageBuffer::releaseBuffer();
+  }
 }
 
 void SensorStatusManager::sendStatusUpdate() {
-  extern void sendBluetoothMessage(const String& message);
-  sendBluetoothMessage("SENSOR_STATUS:" + getStatusJSON());
+  if (MessageBuffer::isAvailable()) {
+    char *buffer = MessageBuffer::getBuffer();
+    getStatusBuffer(buffer, MAX_MESSAGE_LENGTH);
+
+    TempString<MAX_MESSAGE_LENGTH + 20> message;
+    message.printf_P(PSTR("SENSOR_STATUS:%s"), buffer);
+
+    sendBluetoothMessage(message.get());
+    MessageBuffer::releaseBuffer();
+  }
 }
 
-String SensorStatusManager::getStatusJSON() {
-  String json = "{";
-  json += "\"frontDist\":" + String(currentStatus.frontDistance, 1) + ",";
-  json += "\"rearDist\":" + String(currentStatus.rearDistance, 1) + ",";
-  json += "\"frontObstacle\":" + String(currentStatus.frontObstacle ? "true" : "false") + ",";
-  json += "\"rearObstacle\":" + String(currentStatus.rearObstacle ? "true" : "false") + ",";
-  json += "\"frontRisk\":" + String(currentStatus.frontCollisionRisk ? "true" : "false") + ",";
-  json += "\"rearRisk\":" + String(currentStatus.rearCollisionRisk ? "true" : "false") + ",";
-  json += "\"active\":" + String(currentStatus.sensorsActive ? "true" : "false") + ",";
-  json += "\"timestamp\":" + String(currentStatus.lastUpdate);
-  json += "}";
-  return json;
+void SensorStatusManager::getStatusBuffer(char *buffer, size_t bufferSize) {
+  char frontStr[8], rearStr[8];
+  formatFloat(currentStatus.frontDistance, frontStr, sizeof(frontStr), 1);
+  formatFloat(currentStatus.rearDistance, rearStr, sizeof(rearStr), 1);
+
+  snprintf_P(buffer, bufferSize,
+             PSTR("{\"frontDist\":%s,\"rearDist\":%s,\"frontObstacle\":%s,"
+                  "\"rearObstacle\":%s,\"frontRisk\":%s,\"rearRisk\":%s,"
+                  "\"active\":%s,\"timestamp\":%lu}"),
+             frontStr, rearStr, currentStatus.frontObstacle ? "true" : "false",
+             currentStatus.rearObstacle ? "true" : "false",
+             currentStatus.frontCollisionRisk ? "true" : "false",
+             currentStatus.rearCollisionRisk ? "true" : "false",
+             currentStatus.sensorsActive ? "true" : "false",
+             currentStatus.lastUpdate);
 }
 
-String SensorStatusManager::getDetailedStatusJSON() {
-  String json = "{";
-  json += "\"sensors\":{";
-  json += "\"front\":{";
-  json += "\"distance\":" + String(currentStatus.frontDistance, 1) + ",";
-  json += "\"obstacle\":" + String(currentStatus.frontObstacle ? "true" : "false") + ",";
-  json += "\"collisionRisk\":" + String(currentStatus.frontCollisionRisk ? "true" : "false") + ",";
-  json += "\"active\":" + String(SensorManager::areSensorsEnabled() ? "true" : "false");
-  json += "},";
-  json += "\"rear\":{";
-  json += "\"distance\":" + String(currentStatus.rearDistance, 1) + ",";
-  json += "\"obstacle\":" + String(currentStatus.rearObstacle ? "true" : "false") + ",";
-  json += "\"collisionRisk\":" + String(currentStatus.rearCollisionRisk ? "true" : "false") + ",";
-  json += "\"active\":" + String(SensorManager::areSensorsEnabled() ? "true" : "false");
-  json += "}";
-  json += "},";
-  json += "\"collisionAvoidance\":{";
-  json += "\"enabled\":" + String(CollisionAvoidance::isEnabled() ? "true" : "false") + ",";
-  json += "\"emergencyStop\":" + String(CollisionAvoidance::isEmergencyStopActive() ? "true" : "false") + ",";
-  json += "\"aggressiveness\":" + String(CollisionAvoidance::getAggressiveness());
-  json += "},";
-  json += "\"thresholds\":{";
-  json += "\"collision\":" + String(SensorManager::getCollisionDistance(), 1) + ",";
-  json += "\"warning\":" + String(SensorManager::getWarningDistance(), 1);
-  json += "},";
-  json += "\"system\":{";
-  json += "\"healthy\":" + String(SensorManager::areSensorsHealthy() ? "true" : "false") + ",";
-  json += "\"autoSend\":" + String(autoSendEnabled ? "true" : "false") + ",";
-  json += "\"updateInterval\":" + String(statusUpdateInterval) + ",";
-  json += "\"sendInterval\":" + String(statusSendInterval);
-  json += "},";
-  json += "\"timestamp\":" + String(currentStatus.lastUpdate);
-  json += "}";
-  return json;
+void SensorStatusManager::getDetailedStatusBuffer(char *buffer,
+                                                  size_t bufferSize) {
+  char frontStr[8], rearStr[8];
+  formatFloat(currentStatus.frontDistance, frontStr, sizeof(frontStr), 1);
+  formatFloat(currentStatus.rearDistance, rearStr, sizeof(rearStr), 1);
+
+  // Simplified detailed status to fit in buffer
+  snprintf_P(
+      buffer, bufferSize,
+      PSTR("{\"sensors\":{\"front\":{\"dist\":%s,\"obs\":%s,\"risk\":%s},"
+           "\"rear\":{\"dist\":%s,\"obs\":%s,\"risk\":%s},\"active\":%s}}"),
+      frontStr, currentStatus.frontObstacle ? "true" : "false",
+      currentStatus.frontCollisionRisk ? "true" : "false", rearStr,
+      currentStatus.rearObstacle ? "true" : "false",
+      currentStatus.rearCollisionRisk ? "true" : "false",
+      currentStatus.sensorsActive ? "true" : "false");
 }
 
-String SensorStatusManager::formatForFlutterDashboard() {
-  String status = "DASHBOARD_SENSORS:";
-  status += "F=" + String(currentStatus.frontDistance, 0) + "cm,";
-  status += "R=" + String(currentStatus.rearDistance, 0) + "cm";
-  
+void SensorStatusManager::formatForFlutterDashboard(char *buffer,
+                                                    size_t bufferSize) {
+  char frontStr[8], rearStr[8];
+  formatFloat(currentStatus.frontDistance, frontStr, sizeof(frontStr), 0);
+  formatFloat(currentStatus.rearDistance, rearStr, sizeof(rearStr), 0);
+
+  const char *status;
   if (currentStatus.frontCollisionRisk || currentStatus.rearCollisionRisk) {
-    status += ",COLLISION_RISK";
+    status = "COLLISION_RISK";
   } else if (currentStatus.frontObstacle || currentStatus.rearObstacle) {
-    status += ",OBSTACLES";
+    status = "OBSTACLES";
   } else {
-    status += ",CLEAR";
+    status = "CLEAR";
   }
-  
-  return status;
+
+  snprintf_P(buffer, bufferSize, PSTR("DASHBOARD_SENSORS:F=%scm,R=%scm,%s"),
+             frontStr, rearStr, status);
 }
 
-String SensorStatusManager::formatCollisionWarning() {
-  String warning = "COLLISION_WARNING:{";
-  
-  if (currentStatus.frontCollisionRisk) {
-    warning += "\"front\":" + String(currentStatus.frontDistance, 1) + ",";
-  }
-  if (currentStatus.rearCollisionRisk) {
-    warning += "\"rear\":" + String(currentStatus.rearDistance, 1) + ",";
-  }
-  
-  warning += "\"timestamp\":" + String(millis());
-  warning += "}";
-  
-  return warning;
+void SensorStatusManager::formatCollisionWarning(const char *sensor,
+                                                 float distance, char *buffer,
+                                                 size_t bufferSize) {
+  // This function is now implemented in memory_optimization.h
+  ::formatCollisionMessage(sensor, distance, buffer, bufferSize);
 }
 
-String SensorStatusManager::formatSensorHealthCheck() {
-  String health = "SENSOR_HEALTH:{";
-  health += "\"frontActive\":" + String(SensorManager::areSensorsEnabled() ? "true" : "false") + ",";
-  health += "\"rearActive\":" + String(SensorManager::areSensorsEnabled() ? "true" : "false") + ",";
-  health += "\"systemHealthy\":" + String(SensorManager::areSensorsHealthy() ? "true" : "false") + ",";
-  health += "\"collisionAvoidance\":" + String(CollisionAvoidance::isEnabled() ? "true" : "false") + ",";
-  health += "\"timestamp\":" + String(millis());
-  health += "}";
-  return health;
+void SensorStatusManager::formatSensorHealthCheck(char *buffer,
+                                                  size_t bufferSize) {
+  snprintf_P(
+      buffer, bufferSize,
+      PSTR("SENSOR_HEALTH:{\"frontActive\":%s,\"rearActive\":%s,"
+           "\"systemHealthy\":%s,\"collisionAvoidance\":%s,\"timestamp\":%lu}"),
+      SensorManager::areSensorsEnabled() ? "true" : "false",
+      SensorManager::areSensorsEnabled() ? "true" : "false",
+      SensorManager::areSensorsHealthy() ? "true" : "false",
+      CollisionAvoidance::isEnabled() ? "true" : "false", millis());
 }
 
 void SensorStatusManager::setUpdateInterval(int intervalMs) {
   statusUpdateInterval = constrain(intervalMs, 50, 2000);
-  DEBUG_PRINTLN("📊 Status update interval set to " + String(statusUpdateInterval) + "ms");
+  DEBUG_PRINT_P("📊 Status update interval set to ");
+  DEBUG_PRINT_VAL("", statusUpdateInterval);
+  DEBUG_PRINTLN_P("ms");
 }
 
 void SensorStatusManager::setSendInterval(int intervalMs) {
   statusSendInterval = constrain(intervalMs, 100, 5000);
-  DEBUG_PRINTLN("📊 Status send interval set to " + String(statusSendInterval) + "ms");
+  DEBUG_PRINTLN("📊 Status send interval set to " + String(statusSendInterval) +
+                "ms");
 }
 
-int SensorStatusManager::getUpdateInterval() {
-  return statusUpdateInterval;
-}
+int SensorStatusManager::getUpdateInterval() { return statusUpdateInterval; }
 
-int SensorStatusManager::getSendInterval() {
-  return statusSendInterval;
-}
+int SensorStatusManager::getSendInterval() { return statusSendInterval; }
 
-SensorStatus SensorStatusManager::getCurrentStatus() {
-  return currentStatus;
-}
+SensorStatus SensorStatusManager::getCurrentStatus() { return currentStatus; }
 
 float SensorStatusManager::getFrontDistance() {
   return currentStatus.frontDistance;
@@ -286,41 +289,68 @@ bool SensorStatusManager::hasCollisionRisk() {
 }
 
 void SensorStatusManager::sendDiagnosticData() {
-  DEBUG_PRINTLN("📊 Sending diagnostic data...");
-  
-  extern void sendBluetoothMessage(const String& message);
-  
-  // Send sensor readings
-  sendBluetoothMessage("DIAGNOSTIC_SENSORS:" + getDetailedStatusJSON());
-  
-  // Send collision avoidance status
-  String collisionStatus;
-  CollisionAvoidance::getStatus(collisionStatus);
-  sendBluetoothMessage("DIAGNOSTIC_COLLISION:" + collisionStatus);
-  
-  // Send sensor health
-  sendBluetoothMessage("DIAGNOSTIC_HEALTH:" + formatSensorHealthCheck());
-  
-  DEBUG_PRINTLN("✅ Diagnostic data sent");
+  DEBUG_PRINTLN_P("📊 Sending diagnostic data...");
+
+  // Send sensor readings using buffer
+  if (MessageBuffer::isAvailable()) {
+    char *buffer = MessageBuffer::getBuffer();
+    getDetailedStatusBuffer(buffer, MAX_MESSAGE_LENGTH);
+
+    TempString<MAX_MESSAGE_LENGTH + 30> message;
+    message.printf_P(PSTR("DIAGNOSTIC_SENSORS:%s"), buffer);
+    sendBluetoothMessage(message.get());
+    MessageBuffer::releaseBuffer();
+  }
+
+  // Send collision avoidance status using buffer
+  if (MessageBuffer::isAvailable()) {
+    char *buffer = MessageBuffer::getBuffer();
+    CollisionAvoidance::getStatus(buffer, MAX_MESSAGE_LENGTH);
+
+    TempString<MAX_MESSAGE_LENGTH + 30> message;
+    message.printf_P(PSTR("DIAGNOSTIC_COLLISION:%s"), buffer);
+    sendBluetoothMessage(message.get());
+    MessageBuffer::releaseBuffer();
+  }
+
+  // Send sensor health using buffer
+  if (MessageBuffer::isAvailable()) {
+    char *buffer = MessageBuffer::getBuffer();
+    formatSensorHealthCheck(buffer, MAX_MESSAGE_LENGTH);
+
+    TempString<MAX_MESSAGE_LENGTH + 30> message;
+    message.printf_P(PSTR("DIAGNOSTIC_HEALTH:%s"), buffer);
+    sendBluetoothMessage(message.get());
+    MessageBuffer::releaseBuffer();
+  }
+
+  DEBUG_PRINTLN_P("✅ Diagnostic data sent");
 }
 
 void SensorStatusManager::testSensorCommunication() {
-  DEBUG_PRINTLN("🧪 Testing sensor communication...");
-  
-  extern void sendBluetoothMessage(const String& message);
-  
+  DEBUG_PRINTLN_P("🧪 Testing sensor communication...");
+
   // Send test message
   sendBluetoothMessage("SENSOR_TEST_START");
-  
+
   // Send multiple status updates
   for (int i = 0; i < 5; i++) {
     updateCurrentStatus();
-    sendBluetoothMessage("SENSOR_TEST_" + String(i) + ":" + getStatusJSON());
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      getStatusBuffer(buffer, MAX_MESSAGE_LENGTH);
+
+      TempString<MAX_MESSAGE_LENGTH + 30> message;
+      message.printf_P(PSTR("SENSOR_TEST_%d:%s"), i, buffer);
+      sendBluetoothMessage(message.get());
+      MessageBuffer::releaseBuffer();
+    }
     delay(200);
   }
-  
+
   sendBluetoothMessage("SENSOR_TEST_COMPLETE");
-  DEBUG_PRINTLN("✅ Sensor communication test complete");
+  DEBUG_PRINTLN_P("✅ Sensor communication test complete");
 }
 
 #endif // SENSOR_STATUS_H
