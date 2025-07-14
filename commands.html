@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>Robot Command Interface</title>
+ <style>
+  * {
+   margin: 0;
+   padding: 0;
+   box-sizing: border-box;
+  }
+
+  body {
+   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+   min-height: 100vh;
+   padding: 20px;
+  }
+
+  .container {
+   max-width: 1200px;
+   margin: 0 auto;
+   background: rgba(255, 255, 255, 0.95);
+   border-radius: 20px;
+   padding: 30px;
+   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  }
+
+  h1 {
+   text-align: center;
+   color: #2c3e50;
+   margin-bottom: 30px;
+   font-size: 2.5em;
+   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .command-grid {
+   display: grid;
+   grid-template-columns: 1fr 1fr 1fr;
+   gap: 30px;
+   margin-bottom: 30px;
+  }
+
+  .command-section {
+   background: #f8f9fa;
+   border-radius: 15px;
+   padding: 25px;
+   border-left: 5px solid;
+   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+   transition: transform 0.3s ease;
+  }
+
+  .command-section:hover {
+   transform: translateY(-5px);
+  }
+
+  .motor-section {
+   border-left-color: #e74c3c;
+  }
+
+  .servo-section {
+   border-left-color: #3498db;
+  }
+
+  .system-section {
+   border-left-color: #27ae60;
+  }
+
+  .sensor-section {
+   border-left-color: #f39c12;
+  }
+
+  .section-title {
+   font-size: 1.4em;
+   font-weight: bold;
+   margin-bottom: 20px;
+   color: #2c3e50;
+  }
+
+  .motor-section .section-title {
+   color: #e74c3c;
+  }
+
+  .servo-section .section-title {
+   color: #3498db;
+  }
+
+  .system-section .section-title {
+   color: #27ae60;
+  }
+
+  .sensor-section .section-title {
+   color: #f39c12;
+  }
+
+  .control-group {
+   margin-bottom: 20px;
+  }
+
+  .control-label {
+   display: block;
+   margin-bottom: 8px;
+   font-weight: 600;
+   color: #34495e;
+  }
+
+  .control-row {
+   display: flex;
+   gap: 10px;
+   align-items: center;
+   margin-bottom: 10px;
+  }
+
+  .btn {
+   padding: 10px 20px;
+   border: none;
+   border-radius: 8px;
+   font-weight: bold;
+   cursor: pointer;
+   transition: all 0.3s ease;
+   font-size: 14px;
+   text-transform: uppercase;
+   letter-spacing: 0.5px;
+  }
+
+  .btn:hover {
+   transform: translateY(-2px);
+   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+  }
+
+  .btn:active {
+   transform: translateY(0);
+  }
+
+  .btn-motor {
+   background: #e74c3c;
+   color: white;
+  }
+
+  .btn-motor:hover {
+   background: #c0392b;
+  }
+
+  .btn-servo {
+   background: #3498db;
+   color: white;
+  }
+
+  .btn-servo:hover {
+   background: #2980b9;
+  }
+
+  .btn-system {
+   background: #27ae60;
+   color: white;
+  }
+
+  .btn-system:hover {
+   background: #229954;
+  }
+
+  .btn-sensor {
+   background: #f39c12;
+   color: white;
+  }
+
+  .btn-sensor:hover {
+   background: #e67e22;
+  }
+
+  .btn-emergency {
+   background: #e74c3c;
+   color: white;
+   font-size: 16px;
+   padding: 15px 30px;
+  }
+
+  .btn-emergency:hover {
+   background: #c0392b;
+  }
+
+  .input-range {
+   flex: 1;
+   height: 8px;
+   border-radius: 5px;
+   background: #ddd;
+   outline: none;
+   margin: 0 10px;
+  }
+
+  .input-range::-webkit-slider-thumb {
+   appearance: none;
+   width: 20px;
+   height: 20px;
+   border-radius: 50%;
+   background: #4CAF50;
+   cursor: pointer;
+  }
+
+  .input-range::-moz-range-thumb {
+   width: 20px;
+   height: 20px;
+   border-radius: 50%;
+   background: #4CAF50;
+   cursor: pointer;
+   border: none;
+  }
+
+  .speed-display {
+   min-width: 50px;
+   text-align: center;
+   font-weight: bold;
+   color: #2c3e50;
+   font-size: 14px;
+  }
+
+  .custom-command {
+   grid-column: 1 / -1;
+   background: #2c3e50;
+   color: white;
+   border-left-color: #34495e;
+  }
+
+  .custom-command .section-title {
+   color: white;
+  }
+
+  .command-input {
+   width: 100%;
+   padding: 15px;
+   border: 2px solid #34495e;
+   border-radius: 8px;
+   font-size: 16px;
+   margin-bottom: 15px;
+   background: rgba(255, 255, 255, 0.1);
+   color: white;
+  }
+
+  .command-input::placeholder {
+   color: rgba(255, 255, 255, 0.7);
+  }
+
+  .output-section {
+   background: #1a1a1a;
+   border-radius: 15px;
+   padding: 25px;
+   margin-top: 30px;
+   color: #00ff00;
+   font-family: 'Courier New', monospace;
+  }
+
+  .output-title {
+   color: #00ff00;
+   font-size: 1.2em;
+   margin-bottom: 15px;
+  }
+
+  .output-display {
+   background: #000;
+   border: 2px solid #333;
+   border-radius: 8px;
+   padding: 15px;
+   height: 300px;
+   overflow-y: auto;
+   font-family: 'Courier New', monospace;
+   white-space: pre-wrap;
+   line-height: 1.4;
+  }
+
+  .status-indicators {
+   display: flex;
+   justify-content: space-around;
+   margin-bottom: 20px;
+  }
+
+  .status-indicator {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   padding: 10px 15px;
+   border-radius: 20px;
+   background: rgba(255, 255, 255, 0.1);
+   font-weight: bold;
+  }
+
+  .status-dot {
+   width: 12px;
+   height: 12px;
+   border-radius: 50%;
+   background: #95a5a6;
+  }
+
+  .status-dot.active {
+   background: #27ae60;
+   box-shadow: 0 0 10px #27ae60;
+  }
+
+  .preset-buttons {
+   display: flex;
+   gap: 5px;
+   flex-wrap: wrap;
+  }
+
+  .preset-btn {
+   padding: 8px 12px;
+   background: #3498db;
+   color: white;
+   border: none;
+   border-radius: 5px;
+   cursor: pointer;
+   font-size: 12px;
+   transition: all 0.3s ease;
+  }
+
+  .preset-btn:hover {
+   background: #2980b9;
+   transform: translateY(-1px);
+  }
+
+  @media (max-width: 768px) {
+   .command-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+   }
+  }
+ </style>
+</head>
+
+<body>
+ <div class="container">
+  <h1>🤖 Robot Command Interface</h1>
+
+  <div class="status-indicators">
+   <div class="status-indicator">
+    <div class="status-dot" id="motor-status"></div>
+    <span>Motors</span>
+   </div>
+   <div class="status-indicator">
+    <div class="status-dot" id="servo-status"></div>
+    <span>Servos</span>
+   </div>
+   <div class="status-indicator">
+    <div class="status-dot" id="sensor-status"></div>
+    <span>Sensors</span>
+   </div>
+   <div class="status-indicator">
+    <div class="status-dot" id="bluetooth-status"></div>
+    <span>Bluetooth</span>
+   </div>
+  </div>
+
+  <div class="command-grid">
+   <!-- Motor Commands -->
+   <div class="command-section motor-section">
+    <div class="section-title">🚗 Motor Commands</div>
+
+    <div class="control-group">
+     <label class="control-label">Movement Controls</label>
+     <div class="control-row">
+      <input type="range" class="input-range" id="speed-slider" min="0" max="100" value="50">
+      <span class="speed-display" id="speed-display">50</span>
+     </div>
+     <div class="control-row">
+      <button class="btn btn-motor" onclick="sendCommand('FORWARD:' + document.getElementById('speed-slider').value)">⬆️
+       Forward</button>
+      <button class="btn btn-motor"
+       onclick="sendCommand('BACKWARD:' + document.getElementById('speed-slider').value)">⬇️ Backward</button>
+     </div>
+     <div class="control-row">
+      <button class="btn btn-motor" onclick="sendCommand('LEFT:' + document.getElementById('speed-slider').value)">⬅️
+       Left</button>
+      <button class="btn btn-motor" onclick="sendCommand('RIGHT:' + document.getElementById('speed-slider').value)">➡️
+       Right</button>
+     </div>
+     <div class="control-row">
+      <button class="btn btn-motor" onclick="sendCommand('STOP')">🛑 STOP</button>
+     </div>
+    </div>
+
+    <div class="control-group">
+     <label class="control-label">Tank Drive</label>
+     <div class="control-row">
+      <span>L:</span>
+      <input type="range" class="input-range" id="tank-left" min="-100" max="100" value="0">
+      <span id="tank-left-display">0</span>
+     </div>
+     <div class="control-row">
+      <span>R:</span>
+      <input type="range" class="input-range" id="tank-right" min="-100" max="100" value="0">
+      <span id="tank-right-display">0</span>
+     </div>
+     <button class="btn btn-motor" onclick="sendTankCommand()">🎮 Tank Drive</button>
+    </div>
+   </div>
+
+   <!-- Servo Commands -->
+   <div class="command-section servo-section">
+    <div class="section-title">🦾 Servo Arm Commands</div>
+
+    <div class="control-group">
+     <label class="control-label">Arm Positions</label>
+     <div class="control-row">
+      <button class="btn btn-servo" onclick="sendCommand('ARM_HOME')">🏠 Home</button>
+     </div>
+     <div class="preset-buttons">
+      <button class="preset-btn" onclick="sendCommand('ARM_PRESET:1')">P1</button>
+      <button class="preset-btn" onclick="sendCommand('ARM_PRESET:2')">P2</button>
+      <button class="preset-btn" onclick="sendCommand('ARM_PRESET:3')">P3</button>
+      <button class="preset-btn" onclick="sendCommand('ARM_PRESET:4')">P4</button>
+      <button class="preset-btn" onclick="sendCommand('ARM_PRESET:5')">P5</button>
+     </div>
+    </div>
+
+    <div class="control-group">
+     <label class="control-label">Gripper</label>
+     <div class="control-row">
+      <button class="btn btn-servo" onclick="sendCommand('GRIPPER_OPEN')">✋ Open</button>
+      <button class="btn btn-servo" onclick="sendCommand('GRIPPER_CLOSE')">✊ Close</button>
+     </div>
+    </div>
+
+    <div class="control-group">
+     <label class="control-label">Individual Servos</label>
+     <div class="control-row">
+      <span>Base:</span>
+      <input type="range" class="input-range" id="servo1" min="0" max="180" value="90">
+      <span id="servo1-display">90°</span>
+     </div>
+     <div class="control-row">
+      <span>Shoulder:</span>
+      <input type="range" class="input-range" id="servo2" min="0" max="180" value="90">
+      <span id="servo2-display">90°</span>
+     </div>
+     <div class="control-row">
+      <span>Elbow:</span>
+      <input type="range" class="input-range" id="servo3" min="0" max="180" value="90">
+      <span id="servo3-display">90°</span>
+     </div>
+    </div>
+   </div>
+
+   <!-- System Commands -->
+   <div class="command-section system-section">
+    <div class="section-title">⚙️ System Commands</div>
+
+    <div class="control-group">
+     <label class="control-label">System Control</label>
+     <div class="control-row">
+      <button class="btn btn-system" onclick="sendCommand('STATUS')">📊 Status</button>
+      <button class="btn btn-system" onclick="sendCommand('PING')">📡 Ping</button>
+     </div>
+    </div>
+
+    <div class="control-group">
+     <label class="control-label">Speed Settings</label>
+     <div class="control-row">
+      <span>Motor:</span>
+      <input type="range" class="input-range" id="motor-speed" min="20" max="100" value="50">
+      <span id="motor-speed-display">50</span>
+     </div>
+     <div class="control-row">
+      <span>Servo:</span>
+      <input type="range" class="input-range" id="servo-speed" min="1" max="5" value="3">
+      <span id="servo-speed-display">3</span>
+     </div>
+    </div>
+
+    <div class="control-group">
+     <label class="control-label">Testing & Calibration</label>
+     <div class="control-row">
+      <button class="btn btn-system" onclick="sendCommand('TEST_MOTORS')">🔧 Test Motors</button>
+      <button class="btn btn-system" onclick="sendCommand('TEST_SERVOS')">🔧 Test Servos</button>
+     </div>
+     <div class="control-row">
+      <button class="btn btn-system" onclick="sendCommand('CALIBRATE')">📐 Calibrate</button>
+     </div>
+    </div>
+
+    <div class="control-row">
+     <button class="btn btn-emergency" onclick="sendCommand('EMERGENCY')">🚨 EMERGENCY STOP</button>
+    </div>
+   </div>
+
+   <!-- Sensor Commands -->
+   <div class="command-section sensor-section">
+    <div class="section-title">📡 Sensor Commands</div>
+
+    <div class="control-group">
+     <label class="control-label">Sensor Control</label>
+     <div class="control-row">
+      <button class="btn btn-sensor" onclick="sendCommand('SENSORS_ENABLE')">✅ Enable</button>
+      <button class="btn btn-sensor" onclick="sendCommand('SENSORS_DISABLE')">❌ Disable</button>
+     </div>
+    </div>
+
+    <div class="control-group">
+     <label class="control-label">Sensor Status</label>
+     <div class="control-row">
+      <button class="btn btn-sensor" onclick="sendCommand('SENSOR_STATUS')">📊 Status</button>
+      <button class="btn btn-sensor" onclick="sendCommand('SENSOR_DETAILED')">📋 Detailed</button>
+     </div>
+    </div>
+
+    <div class="control-group">
+     <label class="control-label">Collision Distance</label>
+     <div class="control-row">
+      <input type="range" class="input-range" id="collision-distance" min="5" max="100" value="20">
+      <span id="collision-distance-display">20cm</span>
+     </div>
+     <button class="btn btn-sensor"
+      onclick="sendCommand('COLLISION_DIST:' + document.getElementById('collision-distance').value)">Set
+      Distance</button>
+    </div>
+
+    <div class="control-group">
+     <label class="control-label">Testing</label>
+     <div class="control-row">
+      <button class="btn btn-sensor" onclick="sendCommand('TEST_SENSORS')">🔧 Test</button>
+      <button class="btn btn-sensor" onclick="sendCommand('CALIBRATE_SENSORS')">📐 Calibrate</button>
+     </div>
+    </div>
+   </div>
+
+   <!-- Custom Command -->
+   <div class="command-section custom-command">
+    <div class="section-title">⌨️ Custom Command</div>
+    <input type="text" class="command-input" id="custom-command" placeholder="Enter custom command (e.g., FORWARD:75)"
+     onkeypress="handleKeyPress(event)">
+    <button class="btn btn-system" onclick="sendCustomCommand()">Send Command</button>
+   </div>
+  </div>
+
+  <div class="output-section">
+   <div class="output-title">📟 Command Output</div>
+   <div class="output-display" id="output-display">Robot Command Interface Ready...\nWaiting for commands...\n</div>
+  </div>
+ </div>
+
+ <script>
+  // Global variables
+  let commandHistory = [];
+  let historyIndex = 0;
+
+  // Initialize interface
+  document.addEventListener('DOMContentLoaded', function () {
+   initializeSliders();
+   addLog('Interface initialized', 'info');
+   sendCommand('PING'); // Test connection
+  });
+
+  function initializeSliders() {
+   const sliders = [
+    { id: 'speed-slider', display: 'speed-display', suffix: '' },
+    { id: 'tank-left', display: 'tank-left-display', suffix: '' },
+    { id: 'tank-right', display: 'tank-right-display', suffix: '' },
+    { id: 'servo1', display: 'servo1-display', suffix: '°' },
+    { id: 'servo2', display: 'servo2-display', suffix: '°' },
+    { id: 'servo3', display: 'servo3-display', suffix: '°' },
+    { id: 'motor-speed', display: 'motor-speed-display', suffix: '' },
+    { id: 'servo-speed', display: 'servo-speed-display', suffix: '' },
+    { id: 'collision-distance', display: 'collision-distance-display', suffix: 'cm' }
+   ];
+
+   sliders.forEach(slider => {
+    const element = document.getElementById(slider.id);
+    const display = document.getElementById(slider.display);
+
+    element.addEventListener('input', function () {
+     display.textContent = this.value + slider.suffix;
+    });
+   });
+
+   // Auto-send servo commands on change
+   ['servo1', 'servo2', 'servo3'].forEach(servoId => {
+    document.getElementById(servoId).addEventListener('change', function () {
+     const servoNumber = servoId.replace('servo', '');
+     sendCommand(`SERVO${servoNumber}:${this.value}`);
+    });
+   });
+
+   // Auto-send speed commands on change
+   document.getElementById('motor-speed').addEventListener('change', function () {
+    sendCommand(`SPEED:${this.value}`);
+   });
+
+   document.getElementById('servo-speed').addEventListener('change', function () {
+    sendCommand(`SERVO_SPEED:${this.value}`);
+   });
+  }
+
+  function sendCommand(command) {
+   if (!command.trim()) return;
+
+   commandHistory.push(command);
+   historyIndex = commandHistory.length;
+
+   addLog(`> ${command}`, 'command');
+
+   // Simulate robot response (in real implementation, this would be via Bluetooth)
+   setTimeout(() => {
+    simulateRobotResponse(command);
+   }, 100);
+  }
+
+  function sendCustomCommand() {
+   const input = document.getElementById('custom-command');
+   const command = input.value.trim().toUpperCase();
+
+   if (command) {
+    sendCommand(command);
+    input.value = '';
+   }
+  }
+
+  function sendTankCommand() {
+   const leftSpeed = document.getElementById('tank-left').value;
+   const rightSpeed = document.getElementById('tank-right').value;
+   sendCommand(`TANK:${leftSpeed},${rightSpeed}`);
+  }
+
+  function simulateRobotResponse(command) {
+   // Simulate different types of responses based on command
+   if (command === 'PING') {
+    addLog('PONG', 'response');
+    updateStatus('bluetooth', true);
+   } else if (command === 'STATUS') {
+    addLog('STATUS_MOTORS:READY,SPEED:50', 'response');
+    addLog('STATUS_SERVOS:READY,HOME_POS', 'response');
+    addLog('STATUS_SYSTEM:ONLINE,BATTERY:85%', 'response');
+    updateStatus('motor', true);
+    updateStatus('servo', true);
+   } else if (command.startsWith('FORWARD')) {
+    addLog('FORWARD_OK', 'response');
+    updateStatus('motor', true);
+   } else if (command.startsWith('SERVO')) {
+    addLog(`${command.split(':')[0]}_OK`, 'response');
+    updateStatus('servo', true);
+   } else if (command === 'EMERGENCY') {
+    addLog('EMERGENCY_STOP_ACTIVATED', 'error');
+    updateStatus('motor', false);
+    updateStatus('servo', false);
+   } else if (command.startsWith('SENSORS_ENABLE')) {
+    addLog('SENSORS_ENABLED', 'response');
+    updateStatus('sensor', true);
+   } else if (command.startsWith('SENSORS_DISABLE')) {
+    addLog('SENSORS_DISABLED', 'response');
+    updateStatus('sensor', false);
+   } else {
+    addLog(`${command}_OK`, 'response');
+   }
+  }
+
+  function addLog(message, type) {
+   const output = document.getElementById('output-display');
+   const timestamp = new Date().toLocaleTimeString();
+
+   let prefix = '';
+   switch (type) {
+    case 'command':
+     prefix = '[CMD] ';
+     break;
+    case 'response':
+     prefix = '[RSP] ';
+     break;
+    case 'error':
+     prefix = '[ERR] ';
+     break;
+    case 'info':
+     prefix = '[INF] ';
+     break;
+   }
+
+   output.textContent += `${timestamp} ${prefix}${message}\n`;
+   output.scrollTop = output.scrollHeight;
+  }
+
+  function updateStatus(component, active) {
+   const statusDot = document.getElementById(`${component}-status`);
+   if (active) {
+    statusDot.classList.add('active');
+   } else {
+    statusDot.classList.remove('active');
+   }
+  }
+
+  function handleKeyPress(event) {
+   const input = document.getElementById('custom-command');
+
+   if (event.key === 'Enter') {
+    sendCustomCommand();
+   } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    if (historyIndex > 0) {
+     historyIndex--;
+     input.value = commandHistory[historyIndex];
+    }
+   } else if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    if (historyIndex < commandHistory.length - 1) {
+     historyIndex++;
+     input.value = commandHistory[historyIndex];
+    } else {
+     historyIndex = commandHistory.length;
+     input.value = '';
+    }
+   }
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', function (event) {
+   if (event.target.tagName === 'INPUT') return;
+
+   const speed = document.getElementById('speed-slider').value;
+
+   switch (event.key.toLowerCase()) {
+    case 'w':
+     sendCommand(`FORWARD:${speed}`);
+     break;
+    case 's':
+     sendCommand(`BACKWARD:${speed}`);
+     break;
+    case 'a':
+     sendCommand(`LEFT:${speed}`);
+     break;
+    case 'd':
+     sendCommand(`RIGHT:${speed}`);
+     break;
+    case ' ':
+     event.preventDefault();
+     sendCommand('STOP');
+     break;
+    case 'h':
+     sendCommand('ARM_HOME');
+     break;
+    case 'o':
+     sendCommand('GRIPPER_OPEN');
+     break;
+    case 'c':
+     sendCommand('GRIPPER_CLOSE');
+     break;
+    case 'escape':
+     sendCommand('EMERGENCY');
+     break;
+   }
+  });
+ </script>
+</body>
+
+</html>

@@ -133,7 +133,8 @@ class JoystickControlSection extends StatelessWidget {
                   // Forward button
                   _buildDirectionalButton(
                     icon: Icons.keyboard_arrow_up,
-                    onPressed: () => onMotorSpeedsChanged(60, 60),
+                    onPressed: () =>
+                        onMotorSpeedsChanged(60, 60), // Forward movement
                     onReleased: () => onMotorSpeedsChanged(0, 0),
                     color: Colors.green,
                     size: 60,
@@ -147,7 +148,10 @@ class JoystickControlSection extends StatelessWidget {
                     children: [
                       _buildDirectionalButton(
                         icon: Icons.keyboard_arrow_left,
-                        onPressed: () => onMotorSpeedsChanged(-60, 60),
+                        onPressed: () => onMotorSpeedsChanged(
+                          -60,
+                          60,
+                        ), // Left turn (left motor reverse, right forward)
                         onReleased: () => onMotorSpeedsChanged(0, 0),
                         color: Colors.blue,
                         size: 60,
@@ -157,7 +161,8 @@ class JoystickControlSection extends StatelessWidget {
 
                       _buildDirectionalButton(
                         icon: Icons.stop,
-                        onPressed: () => onMotorSpeedsChanged(0, 0),
+                        onPressed: () =>
+                            onMotorSpeedsChanged(0, 0), // Emergency stop
                         onReleased: () {},
                         color: Colors.red,
                         size: 60,
@@ -167,7 +172,10 @@ class JoystickControlSection extends StatelessWidget {
 
                       _buildDirectionalButton(
                         icon: Icons.keyboard_arrow_right,
-                        onPressed: () => onMotorSpeedsChanged(60, -60),
+                        onPressed: () => onMotorSpeedsChanged(
+                          60,
+                          -60,
+                        ), // Right turn (left motor forward, right reverse)
                         onReleased: () => onMotorSpeedsChanged(0, 0),
                         color: Colors.purple,
                         size: 60,
@@ -180,7 +188,8 @@ class JoystickControlSection extends StatelessWidget {
                   // Backward button
                   _buildDirectionalButton(
                     icon: Icons.keyboard_arrow_down,
-                    onPressed: () => onMotorSpeedsChanged(-60, -60),
+                    onPressed: () =>
+                        onMotorSpeedsChanged(-60, -60), // Backward movement
                     onReleased: () => onMotorSpeedsChanged(0, 0),
                     color: Colors.orange,
                     size: 60,

@@ -584,7 +584,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     setState(() {
       motorDiagnostics = !motorDiagnostics;
     });
-    _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
+    _sendCommand(RobotControlService.debugCommand(motorDiagnostics));
   }
 
   void _testMotors() {
