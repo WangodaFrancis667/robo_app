@@ -165,16 +165,26 @@ class RobotControlService {
 
   /// Send sensor status request
   static String sensorStatusCommand() {
-    return 'SENSOR_STATUS';
+    return 'SS';
   }
 
-  // Sensor commands
-  static String sensorStatusCommand() => 'SENSOR_STATUS';
-  static String sensorsEnableCommand() => 'SENSORS_ENABLE';
-  static String sensorsDisableCommand() => 'SENSORS_DISABLE';
-  static String collisionDistanceCommand(int distance) => 'COLLISION_DIST:$distance';
-  static String testSensorsCommand() => 'TEST_SENSORS';
-  static String calibrateSensorsCommand() => 'CALIBRATE_SENSORS';
+  // Additional sensor commands (shortened format)
+  static String sensorsEnableCommand() => 'SEN';
+  static String sensorsDisableCommand() => 'SDS';
+  static String collisionDistanceCommand(int distance) => 'CD:$distance';
+  
+  // Test commands (shortened format)
+  static String motorTestCommand() => 'TM';
+  static String servoTestCommand() => 'TS';
+  static String sensorTestCommand() => 'TSS';
+  static String calibrateCommand() => 'CAL';
+  static String calibrateSensorsCommand() => 'CS';
+
+  // Legacy compatibility method (deprecated)
+  @Deprecated('Use debugCommand instead')
+  static String diagnosticsCommand(bool enabled) {
+    return debugCommand(enabled);
+  }
 
   // Command validation
   static bool isValidSpeed(int speed) {
