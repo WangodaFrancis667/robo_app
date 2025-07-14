@@ -14,7 +14,8 @@ class LiveMonitoringScreen extends StatefulWidget {
 
 class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
   // Replace with your Raspberry Pi's IP address
-  final String _raspberryPiIP = '192.168.137.4';//'192.168.1.8'; // Change this to your Pi's IP
+  final String _raspberryPiIP =
+      '192.168.137.4'; //'192.168.1.8'; // Change this to your Pi's IP
 
   // Robot control URL (if your robot control is also on the Pi)
   String get controlUrl => 'http://$_raspberryPiIP:5000/control';
@@ -581,21 +582,6 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
       }
     } catch (e) {
       debugPrint('Error sending return home command: $e');
-    }
-  }
-
-  /// Test basic connectivity to the server
-  Future<bool> _testConnectivity(String url) async {
-    try {
-      debugPrint('Testing basic connectivity to: $url');
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(Duration(seconds: 5));
-      debugPrint('Test response status: ${response.statusCode}');
-      return response.statusCode == 200;
-    } catch (e) {
-      debugPrint('Connectivity test failed: $e');
-      return false;
     }
   }
 }
