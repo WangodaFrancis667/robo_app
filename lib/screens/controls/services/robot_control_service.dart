@@ -1,26 +1,25 @@
 // services/orientation_service.dart
 import 'package:flutter/services.dart';
 
-
 // services/robot_control_service.dart
 class RobotControlService {
   // Default servo names for the 6-servo arm
   static const List<String> defaultServoNames = [
     'Base',
-    'Shoulder', 
+    'Shoulder',
     'Elbow',
     'Wrist R',
     'Wrist T',
-    'Gripper'
+    'Gripper',
   ];
 
   // Default poses for the robot arm
   static const List<String> defaultPoses = [
     'Home',
     'Pickup',
-    'Place', 
+    'Place',
     'Rest',
-    'Extended'
+    'Extended',
   ];
 
   // MOTOR COMMANDS - match Arduino controller exactly
@@ -172,7 +171,7 @@ class RobotControlService {
   static String sensorsEnableCommand() => 'SEN';
   static String sensorsDisableCommand() => 'SDS';
   static String collisionDistanceCommand(int distance) => 'CD:$distance';
-  
+
   // Test commands (shortened format)
   static String motorTestCommand() => 'TM';
   static String servoTestCommand() => 'TS';
@@ -235,8 +234,6 @@ class RobotControlService {
     return null;
   }
 }
-
-
 
 class OrientationService {
   static Future<void> switchToLandscapeMode() async {
