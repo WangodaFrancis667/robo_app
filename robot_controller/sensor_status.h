@@ -159,7 +159,8 @@ void SensorStatusManager::sendDetailedStatus() {
     char *buffer = MessageBuffer::getBuffer();
     getDetailedStatusBuffer(buffer, MAX_MESSAGE_LENGTH);
 
-    TempString<MAX_MESSAGE_LENGTH + 20> message;
+    TempString<MAX_MESSAGE_LENGTH + 50>
+        message; // Extra buffer for "SENSOR_DETAILED:" prefix
     message.printf_P(PSTR("SENSOR_DETAILED:%s"), buffer);
 
     sendBluetoothMessage(message.get());
@@ -172,7 +173,8 @@ void SensorStatusManager::sendStatusUpdate() {
     char *buffer = MessageBuffer::getBuffer();
     getStatusBuffer(buffer, MAX_MESSAGE_LENGTH);
 
-    TempString<MAX_MESSAGE_LENGTH + 20> message;
+    TempString<MAX_MESSAGE_LENGTH + 50>
+        message; // Extra buffer for "SENSOR_STATUS:" prefix
     message.printf_P(PSTR("SENSOR_STATUS:%s"), buffer);
 
     sendBluetoothMessage(message.get());
@@ -186,15 +188,13 @@ void SensorStatusManager::getStatusBuffer(char *buffer, size_t bufferSize) {
   formatFloat(currentStatus.rearDistance, rearStr, sizeof(rearStr), 1);
 
   snprintf_P(buffer, bufferSize,
-             PSTR("{\"frontDist\":%s,\"rearDist\":%s,\"frontObstacle\":%s,"
-                  "\"rearObstacle\":%s,\"frontRisk\":%s,\"rearRisk\":%s,"
-                  "\"active\":%s,\"timestamp\":%lu}"),
-             frontStr, rearStr, currentStatus.frontObstacle ? "true" : "false",
-             currentStatus.rearObstacle ? "true" : "false",
-             currentStatus.frontCollisionRisk ? "true" : "false",
-             currentStatus.rearCollisionRisk ? "true" : "false",
-             currentStatus.sensorsActive ? "true" : "false",
-             currentStatus.lastUpdate);
+             PSTR("{\"f\":%s,\"r\":%s,\"fo\":%s,\"ro\":%s,\"fr\":%s,\"rr\":%s,"
+                  "\"a\":%s,\"t\":%lu}"),
+             frontStr, rearStr, currentStatus.frontObstacle ? "1" : "0",
+             currentStatus.rearObstacle ? "1" : "0",
+             currentStatus.frontCollisionRisk ? "1" : "0",
+             currentStatus.rearCollisionRisk ? "1" : "0",
+             currentStatus.sensorsActive ? "1" : "0", currentStatus.lastUpdate);
 }
 
 void SensorStatusManager::getDetailedStatusBuffer(char *buffer,

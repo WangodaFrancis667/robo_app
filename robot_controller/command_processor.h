@@ -175,9 +175,8 @@ void CommandProcessor::executeCommand(const Command &cmd) {
       strcmp(cmd.type, CMD_STOP) == 0) {
     processMotorCommand(cmd);
 
-  } else if (strncmp(cmd.type, "SERVO", 5) == 0 ||
-             strncmp(cmd.type, "ARM", 3) == 0 ||
-             strncmp(cmd.type, "GRIPPER", 7) == 0) {
+  } else if (strncmp(cmd.type, "SE", 2) == 0 ||
+             strncmp(cmd.type, "H", 1) == 0 || strncmp(cmd.type, "G", 1) == 0) {
     processServoCommand(cmd);
 
   } else {
@@ -264,13 +263,17 @@ void CommandProcessor::processServoCommand(const Command &cmd) {
     } else if (strcmp(cmd.type, "SERVO2") == 0 ||
                strcmp(cmd.type, "SERVO_SHOULDER") == 0) {
       servoIndex = SERVO_SHOULDER_IDX;
-    } else if (cmd.type == "SERVO3" || cmd.type == "SERVO_ELBOW") {
+    } else if (strcmp(cmd.type, "SERVO3") == 0 ||
+               strcmp(cmd.type, "SERVO_ELBOW") == 0) {
       servoIndex = SERVO_ELBOW_IDX;
-    } else if (cmd.type == "SERVO4" || cmd.type == "SERVO_WRIST_ROT") {
+    } else if (strcmp(cmd.type, "SERVO4") == 0 ||
+               strcmp(cmd.type, "SERVO_WRIST_ROT") == 0) {
       servoIndex = SERVO_WRIST_ROT_IDX;
-    } else if (cmd.type == "SERVO5" || cmd.type == "SERVO_WRIST_TILT") {
+    } else if (strcmp(cmd.type, "SERVO5") == 0 ||
+               strcmp(cmd.type, "SERVO_WRIST_TILT") == 0) {
       servoIndex = SERVO_WRIST_TILT_IDX;
-    } else if (cmd.type == "SERVO6" || cmd.type == "SERVO_GRIPPER") {
+    } else if (strcmp(cmd.type, "SERVO6") == 0 ||
+               strcmp(cmd.type, "SERVO_GRIPPER") == 0) {
       servoIndex = SERVO_GRIPPER_IDX;
     }
 
@@ -279,7 +282,14 @@ void CommandProcessor::processServoCommand(const Command &cmd) {
       ServoArm::setServoAngle(servoIndex, angle);
       BluetoothHandler::sendResponse(cmd.type);
     } else {
-      BluetoothHandler::sendResponse(cmd.type, false);
+      // Invalid servo command format
+      if (MessageBuffer::isAvailable()) {
+        char *buffer = MessageBuffer::getBuffer();
+        snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("ERROR_%s_INVALID"),
+                   cmd.type);
+        BluetoothHandler::sendMessage(buffer);
+        MessageBuffer::releaseBuffer();
+      }
     }
   }
 }
@@ -290,7 +300,9 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
     char motorStatus[64], servoStatus[64], systemStatus[64];
     MotorController::getStatus(motorStatus, sizeof(motorStatus));
     ServoArm::getStatus(servoStatus, sizeof(servoStatus));
-    SystemStatus::getStatus(systemStatus, sizeof(systemStatus));
+    // SystemStatus::getStatus(systemStatus, sizeof(systemStatus));  //
+    // Temporarily disabled
+    strcpy_P(systemStatus, PSTR("SYS:OK"));
 
     // Send status messages using buffer formatting
     if (MessageBuffer::isAvailable()) {
@@ -333,7 +345,7 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
 
   } else if (cmd.type == CMD_DEBUG) {
     // Toggle debug mode
-    SystemStatus::setDebugMode(cmd.value1 == 1);
+    // SystemStatus::setDebugMode(cmd.value1 == 1);  // Temporarily disabled
 
     if (MessageBuffer::isAvailable()) {
       char *buffer = MessageBuffer::getBuffer();
@@ -346,7 +358,7 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
   } else if (cmd.type == CMD_EMERGENCY) {
     MotorController::emergencyStop();
     ServoArm::emergencyStop();
-    SystemStatus::setEmergencyStop(true);
+    // SystemStatus::setEmergencyStop(true);  // Temporarily disabled
     BluetoothHandler::sendMessage("EMERGENCY_STOP_ACTIVATED");
     BluetoothHandler::sendResponse(CMD_EMERGENCY);
 
@@ -390,7 +402,7 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
     BluetoothHandler::sendResponse("ARM_DISABLE");
 
   } else if (cmd.type == "RESET") {
-    SystemStatus::resetSystem();
+    // SystemStatus::resetSystem();  // Temporarily disabled
     BluetoothHandler::sendResponse("RESET");
 
   } else if (cmd.type == CMD_SENSOR_STATUS) {

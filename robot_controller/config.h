@@ -32,11 +32,14 @@
 
 // Testing mode optimizations - reduced for memory efficiency
 #if SERIAL_TESTING_MODE
-#define SENSOR_UPDATE_INTERVAL 200    // Update sensors every 200ms (slower for memory)
-#define STATUS_SEND_INTERVAL 2000     // Send status every 2 seconds
+#define SENSOR_UPDATE_INTERVAL                                                 \
+  200 // Update sensors every 200ms (slower for memory)
+#define STATUS_SEND_INTERVAL 2000 // Send status every 2 seconds
 #else
-#define SENSOR_UPDATE_INTERVAL 100    // Update sensors every 100ms (reduced from 50ms)
-#define STATUS_SEND_INTERVAL 1000     // Send status every 1 second (reduced frequency)
+#define SENSOR_UPDATE_INTERVAL                                                 \
+  100 // Update sensors every 100ms (reduced from 50ms)
+#define STATUS_SEND_INTERVAL                                                   \
+  1000 // Send status every 1 second (reduced frequency)
 #endif
 
 // ========== PIN DEFINITIONS ==========
@@ -184,7 +187,7 @@ struct SensorState {
   bool isCollisionRisk;
   unsigned long lastUpdate;
   int stableReadingCount;
-  char name[8];         // Fixed size instead of String
+  char name[8]; // Fixed size instead of String
   bool isActive;
 };
 
@@ -202,8 +205,8 @@ struct SensorStatus {
 
 // Command structure - optimized for memory
 struct Command {
-  char type[16];        // Fixed size instead of String
-  char parameter[16];   // Fixed size instead of String
+  char type[16];      // Fixed size instead of String
+  char parameter[16]; // Fixed size instead of String
   int value1;
   int value2;
   unsigned long timestamp;
@@ -237,33 +240,33 @@ class CollisionAvoidance;
 
 // ========== COMMAND DEFINITIONS ==========
 
-// Motor commands
-#define CMD_FORWARD "FORWARD"
-#define CMD_BACKWARD "BACKWARD"
-#define CMD_LEFT "LEFT"
-#define CMD_RIGHT "RIGHT"
-#define CMD_TANK "TANK"
-#define CMD_STOP "STOP"
+// Motor commands (shortened for memory efficiency)
+#define CMD_FORWARD "F"
+#define CMD_BACKWARD "B"
+#define CMD_LEFT "L"
+#define CMD_RIGHT "R"
+#define CMD_TANK "T"
+#define CMD_STOP "S"
 
-// Servo commands
-#define CMD_ARM_HOME "ARM_HOME"
-#define CMD_ARM_PRESET "ARM_PRESET"
-#define CMD_SERVO_MOVE "SERVO"
-#define CMD_GRIPPER_OPEN "GRIPPER_OPEN"
-#define CMD_GRIPPER_CLOSE "GRIPPER_CLOSE"
+// Servo commands (shortened)
+#define CMD_ARM_HOME "H"
+#define CMD_ARM_PRESET "P"
+#define CMD_SERVO_MOVE "SE"
+#define CMD_GRIPPER_OPEN "GO"
+#define CMD_GRIPPER_CLOSE "GC"
 
-// Sensor commands
-#define CMD_SENSOR_STATUS "SENSOR_STATUS"
-#define CMD_SENSORS_ENABLE "SENSORS_ENABLE"
-#define CMD_SENSORS_DISABLE "SENSORS_DISABLE"
-#define CMD_COLLISION_DISTANCE "COLLISION_DIST"
+// Sensor commands (shortened)
+#define CMD_SENSOR_STATUS "SS"
+#define CMD_SENSORS_ENABLE "SEN"
+#define CMD_SENSORS_DISABLE "SDS"
+#define CMD_COLLISION_DISTANCE "CD"
 
-// System commands
-#define CMD_STATUS "STATUS"
-#define CMD_SPEED "SPEED"
-#define CMD_DEBUG "DEBUG"
-#define CMD_EMERGENCY "EMERGENCY"
-#define CMD_PING "PING"
+// System commands (shortened)
+#define CMD_STATUS "ST"
+#define CMD_SPEED "SP"
+#define CMD_DEBUG "D"
+#define CMD_EMERGENCY "E"
+#define CMD_PING "PN"
 
 // Response codes
 #define RESP_OK "OK"

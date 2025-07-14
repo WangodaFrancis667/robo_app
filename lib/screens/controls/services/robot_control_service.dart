@@ -23,32 +23,32 @@ class RobotControlService {
 
   /// Send forward movement command
   static String forwardCommand(int speed) {
-    return 'FORWARD:$speed';
+    return 'F:$speed';
   }
 
   /// Send backward movement command
   static String backwardCommand(int speed) {
-    return 'BACKWARD:$speed';
+    return 'B:$speed';
   }
 
   /// Send left turn command
   static String leftCommand(int speed) {
-    return 'LEFT:$speed';
+    return 'L:$speed';
   }
 
   /// Send right turn command
   static String rightCommand(int speed) {
-    return 'RIGHT:$speed';
+    return 'R:$speed';
   }
 
   /// Send tank drive command
   static String tankDriveCommand(int leftSpeed, int rightSpeed) {
-    return 'TANK:$leftSpeed,$rightSpeed';
+    return 'T:$leftSpeed,$rightSpeed';
   }
 
   /// Send stop command
   static String stopCommand() {
-    return 'STOP';
+    return 'S';
   }
 
   // SERVO ARM COMMANDS - match Arduino controller exactly
@@ -56,7 +56,7 @@ class RobotControlService {
   /// Send individual servo angle command (SERVO1-SERVO6)
   static String servoCommand(int servoId, int angle) {
     // Convert 0-based index to 1-based servo number
-    return 'SERVO${servoId + 1}:$angle';
+    return 'SE${servoId + 1}:$angle';
   }
 
   /// Send alternative servo command using named servos
@@ -77,32 +77,32 @@ class RobotControlService {
 
   /// Send arm home command
   static String homeCommand() {
-    return 'ARM_HOME';
+    return 'H';
   }
 
   /// Send preset position command
   static String poseCommand(String pose) {
     // Extract preset number from pose name
     if (pose.toLowerCase() == 'home') {
-      return 'ARM_HOME';
+      return 'H';
     } else if (pose.toLowerCase().contains('preset')) {
       // Extract number from "Preset X" format
       final match = RegExp(r'\d+').firstMatch(pose);
       if (match != null) {
-        return 'ARM_PRESET:${match.group(0)}';
+        return 'P:${match.group(0)}';
       }
     }
-    return 'ARM_HOME'; // Fallback to home
+    return 'H'; // Fallback to home
   }
 
   /// Send gripper open command
   static String gripperOpenCommand() {
-    return 'GRIPPER_OPEN';
+    return 'GO';
   }
 
   /// Send gripper close command
   static String gripperCloseCommand() {
-    return 'GRIPPER_CLOSE';
+    return 'GC';
   }
 
   /// Send arm enable command
@@ -119,12 +119,12 @@ class RobotControlService {
 
   /// Send status request command
   static String statusCommand() {
-    return 'STATUS';
+    return 'ST';
   }
 
   /// Send global speed command (20-100%)
   static String globalSpeedCommand(int speed) {
-    return 'SPEED:$speed';
+    return 'SP:$speed';
   }
 
   /// Send servo speed command (1-5)
@@ -134,17 +134,17 @@ class RobotControlService {
 
   /// Send debug mode toggle command
   static String debugCommand(bool enabled) {
-    return 'DEBUG:${enabled ? 1 : 0}';
+    return 'D:${enabled ? 1 : 0}';
   }
 
   /// Send emergency stop command
   static String emergencyStopCommand() {
-    return 'EMERGENCY';
+    return 'E';
   }
 
   /// Send ping command for connection monitoring
   static String pingCommand() {
-    return 'PING';
+    return 'PN';
   }
 
   /// Send help command
