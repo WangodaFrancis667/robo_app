@@ -288,10 +288,10 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         // This helps prevent interference
         _pauseNetworkOperations = true;
 
-        // Connect to the device with a reasonable timeout
+        // Connect to the device with extended timeout for HC modules
         tempConnection = await CrossPlatformBluetoothService.connectToDevice(
           device,
-        ).timeout(const Duration(seconds: 15));
+        ).timeout(const Duration(seconds: 40));
 
         setState(() {
           isConnected = true;
@@ -378,6 +378,13 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
           });
 
           _showSnackBar('Failed to connect: $e');
+
+          // Show detailed error for complex error messages
+          if (e.toString().length > 100) {
+            Future.delayed(Duration(milliseconds: 500), () {
+              _showDetailedErrorDialog('Connection Failed', e.toString());
+            });
+          }
 
           // Reset Bluetooth and try to re-initialize if needed
           Future.delayed(const Duration(seconds: 2), () {
@@ -631,41 +638,54 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('ESP32 Connection Tips'),
+          title: const Text('HC Module Connection Tips'),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: const [
                 Text(
-                  'If you\'re having trouble connecting to your ESP32:',
+                  'If you\'re having trouble connecting to your HC module:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: 12),
-                Text('1. Ensure ESP32 is powered on and running'),
+                Text('1. Check HC module power (LED should blink)'),
                 SizedBox(height: 8),
-                Text('2. Check that Bluetooth is enabled on ESP32'),
+                Text('2. Pair device in Android Bluetooth settings first'),
                 SizedBox(height: 8),
-                Text('3. Verify device is paired in Android settings'),
+                Text('3. Ensure Arduino code is uploaded and running'),
                 SizedBox(height: 8),
-                Text('4. Make sure ESP32 code has Serial Port Profile (SPP)'),
+                Text('4. Verify HC module wiring (TX/RX not swapped)'),
                 SizedBox(height: 8),
-                Text('5. Try restarting both devices'),
+                Text('5. Check baud rate is 9600 in Arduino code'),
                 SizedBox(height: 8),
-                Text('6. Check ESP32 Serial Monitor for connection status'),
+                Text('6. Try power cycling the HC module'),
                 SizedBox(height: 12),
                 Text(
-                  'ESP32 Code Requirements:',
+                  'HC Module Setup:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: 8),
-                Text('• Include BluetoothSerial library'),
+                Text('• VCC to 5V (or 3.3V for some modules)'),
                 SizedBox(height: 4),
-                Text('• Set device name (e.g., "ESP32_Robot")'),
+                Text('• GND to Arduino GND'),
                 SizedBox(height: 4),
-                Text('• Enable pairing and discoverable mode'),
+                Text('• HC TX to Arduino Pin 2 (RX)'),
                 SizedBox(height: 4),
-                Text('• Handle incoming serial commands'),
+                Text('• HC RX to Arduino Pin 3 (TX)'),
+                SizedBox(height: 12),
+                Text(
+                  'Troubleshooting:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text('• LED blinking = searching for connection'),
+                SizedBox(height: 4),
+                Text('• LED solid = paired but not connected'),
+                SizedBox(height: 4),
+                Text('• No LED = power or wiring issue'),
+                SizedBox(height: 4),
+                Text('• Default PIN: 1234 or 0000'),
               ],
             ),
           ),
@@ -961,6 +981,60 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  // Enhanced error handling with detailed dialog
+  void _showDetailedErrorDialog(String title, String errorMessage) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Error Details:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text(errorMessage, style: TextStyle(fontSize: 12)),
+                SizedBox(height: 16),
+                Text(
+                  'Troubleshooting Tips:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '• Ensure device is paired in Android Bluetooth settings\n'
+                  '• Check if HC module LED is blinking (searching)\n'
+                  '• Verify Arduino code is uploaded and running\n'
+                  '• Try moving closer to the device\n'
+                  '• Power cycle the HC module\n'
+                  '• Grant all Bluetooth permissions',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _initializeBluetooth();
+              },
+              child: Text('Refresh Devices'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

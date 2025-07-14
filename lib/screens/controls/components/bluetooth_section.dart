@@ -191,8 +191,9 @@ class _BluetoothConnectionSectionState
           const Text(
             'Make sure your robot is:\n'
             '• Powered on and running\n'
-            '• Bluetooth enabled\n'
-            '• Paired with this device',
+            '• HC module LED is blinking\n'
+            '• Paired in Android Bluetooth settings first\n'
+            '• Not connected to another device',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey),
           ),

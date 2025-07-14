@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart'
     as mobile;
 import 'package:permission_handler/permission_handler.dart';
+import 'hc_bluetooth_helper.dart';
 
 // Abstract interfaces for cross-platform compatibility
 abstract class BluetoothDevice {
@@ -197,33 +198,71 @@ class CrossPlatformBluetoothService {
 
       // Different permission sets for different Android versions
       if (Platform.isAndroid) {
-        // For Android 12+ (API 31+)
+        // For Android 12+ (API 31+) - Request new Bluetooth permissions
         permissions = await [
           Permission.bluetoothScan,
           Permission.bluetoothConnect,
           Permission.bluetoothAdvertise,
           Permission.locationWhenInUse,
         ].request();
+
+        // Check if any critical permissions are denied
+        bool bluetoothConnectGranted =
+            permissions[Permission.bluetoothConnect] ==
+            PermissionStatus.granted;
+        bool locationGranted =
+            permissions[Permission.locationWhenInUse] ==
+            PermissionStatus.granted;
+
+        if (!bluetoothConnectGranted) {
+          print(
+            '❌ Bluetooth Connect permission is required for HC module connection',
+          );
+          return false;
+        }
+
+        if (!locationGranted) {
+          print(
+            '⚠️ Location permission helps with Bluetooth discovery but is not critical',
+          );
+        }
+
+        // Check for legacy permissions on older Android versions
+        if (!bluetoothConnectGranted) {
+          final legacyPermissions = await [
+            Permission.bluetooth,
+            Permission.locationWhenInUse,
+          ].request();
+
+          bluetoothConnectGranted =
+              legacyPermissions[Permission.bluetooth] ==
+              PermissionStatus.granted;
+        }
+
+        return bluetoothConnectGranted;
       } else {
         // For iOS
         permissions = await [
           Permission.bluetooth,
           Permission.locationWhenInUse,
         ].request();
+
+        bool allGranted = permissions.values.every(
+          (status) => status == PermissionStatus.granted,
+        );
+
+        if (!allGranted) {
+          print('⚠️ Some Bluetooth permissions were not granted');
+          print('Permissions status: $permissions');
+        }
+
+        return allGranted;
       }
-
-      bool allGranted = permissions.values.every(
-        (status) => status == PermissionStatus.granted,
-      );
-
-      if (!allGranted) {
-        print('⚠️ Some Bluetooth permissions were not granted');
-        print('Permissions status: $permissions');
-      }
-
-      return allGranted;
     } catch (e) {
       print('❌ Error requesting Bluetooth permissions: $e');
+      print(
+        'This might be due to Android version compatibility. Try manually enabling Bluetooth permissions in Settings.',
+      );
       return false;
     }
   }
@@ -260,21 +299,58 @@ class CrossPlatformBluetoothService {
     if (isMobile) {
       try {
         print('🔍 Getting bonded Bluetooth devices...');
+
+        // First check if Bluetooth is enabled
+        bool isEnabled = await isBluetoothEnabled();
+        if (!isEnabled) {
+          throw Exception(
+            'Bluetooth is not enabled. Please enable Bluetooth and try again.',
+          );
+        }
+
         final devices = await mobile.FlutterBluetoothSerial.instance
-            .getBondedDevices();
+            .getBondedDevices()
+            .timeout(Duration(seconds: 10)); // Add timeout
+
         print('📱 Found ${devices.length} bonded devices');
 
-        return devices.map((d) => MobileBluetoothDevice(d)).toList();
+        // Filter for devices that might be HC modules or robots
+        final filteredDevices = devices.where((device) {
+          final name = device.name?.toLowerCase() ?? '';
+          final address = device.address.toLowerCase();
+
+          // Look for common HC module names and robot-related names
+          bool isLikelyRobotDevice =
+              name.contains('hc-') ||
+              name.contains('arduino') ||
+              name.contains('esp32') ||
+              name.contains('robot') ||
+              name.contains('bt') ||
+              address.startsWith('98:d3') || // Common HC-05 MAC prefix
+              address.startsWith('00:18:e4'); // Another common HC MAC prefix
+
+          return isLikelyRobotDevice ||
+              name.isNotEmpty; // Include all named devices as fallback
+        }).toList();
+
+        print('🤖 Found ${filteredDevices.length} potential robot devices');
+        return filteredDevices.map((d) => MobileBluetoothDevice(d)).toList();
       } catch (e) {
         print('❌ Error getting Bluetooth devices: $e');
+        if (e.toString().contains('timeout')) {
+          throw Exception(
+            'Bluetooth device discovery timed out. Please try again or check if Bluetooth is working properly.',
+          );
+        }
         throw Exception('Failed to get Bluetooth devices: $e');
       }
     } else if (isWindows) {
       // Mock devices for Windows demo
       return [
-        WindowsBluetoothDevice('ESP32_Robot_Demo', '00:11:22:33:44:55'),
-        WindowsBluetoothDevice('Arduino_Mega', '00:11:22:33:44:56'),
-        WindowsBluetoothDevice('Test_Device', '00:11:22:33:44:57'),
+        WindowsBluetoothDevice('HC-05 Robot', '98:D3:31:FB:4A:C1'),
+        WindowsBluetoothDevice('HC-06 Controller', '98:D3:31:FB:4A:C2'),
+        WindowsBluetoothDevice('ESP32_Robot', '24:0A:C4:12:34:56'),
+        WindowsBluetoothDevice('Arduino_Robot', '00:18:E4:12:34:56'),
       ];
     }
     return [];
@@ -295,8 +371,14 @@ class CrossPlatformBluetoothService {
   static Future<BluetoothConnection> _connectToMobileDevice(
     MobileBluetoothDevice device,
   ) async {
+    // Check if device is likely an HC module and use specialized connection
+    if (HCBluetoothHelper.isLikelyHCModule(device.name)) {
+      print('🔍 Using HC-optimized connection for ${device.name}');
+      return await HCBluetoothHelper.connectToHCDevice(device);
+    }
+
+    // Fallback to standard connection for other devices
     const int maxRetries = 3;
-    const Duration baseDelay = Duration(seconds: 2);
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -304,43 +386,55 @@ class CrossPlatformBluetoothService {
           '🔗 Connecting to ${device.name} (${device.address}) - Attempt $attempt/$maxRetries',
         );
 
-        // Close any existing connections first - improved for HC modules
+        // Clear any existing connections with shorter timeout
         try {
-          final existingConnection = await mobile.BluetoothConnection.toAddress(
-            device.address,
-          ).timeout(Duration(seconds: 2)); // Reduced timeout for HC modules
-          await existingConnection.close();
-          await Future.delayed(
-            Duration(milliseconds: 1000),
-          ); // Longer delay for HC modules
+          await mobile.BluetoothConnection.toAddress(device.address)
+              .timeout(Duration(milliseconds: 500))
+              .then((conn) => conn.close())
+              .catchError((_) => null);
         } catch (_) {
-          // No existing connection, continue
+          // No existing connection or connection failed, continue
         }
 
-        // Attempt connection with timeout - optimized for HC modules
+        // Wait between attempts
+        if (attempt > 1) {
+          await Future.delayed(Duration(milliseconds: 1000));
+        }
+
+        // Attempt connection with reasonable timeout
         final connection = await mobile.BluetoothConnection.toAddress(
           device.address,
-        ).timeout(Duration(seconds: 20)); // Increased timeout for HC modules
+        ).timeout(Duration(seconds: 15));
 
-        // Minimal stability test for HC modules
-        await Future.delayed(Duration(milliseconds: 300));
+        // Minimal stability check
+        await Future.delayed(Duration(milliseconds: 200));
 
         if (connection.isConnected) {
           print('✅ Successfully connected to ${device.name}');
-          return MobileBluetoothConnection(connection);
+
+          // Additional stability check
+          await Future.delayed(Duration(milliseconds: 300));
+          if (connection.isConnected) {
+            return MobileBluetoothConnection(connection);
+          } else {
+            await connection.close().catchError((_) => null);
+            throw Exception('Connection became unstable');
+          }
         } else {
-          await connection.close();
-          throw Exception('Connection established but not stable');
+          await connection.close().catchError((_) => null);
+          throw Exception('Connection established but not active');
         }
       } catch (e) {
         print('❌ Connection attempt $attempt failed: $e');
 
         if (attempt < maxRetries) {
-          final delay = Duration(seconds: baseDelay.inSeconds * attempt);
-          print('⏱️ Waiting ${delay.inSeconds}s before retry...');
+          final delay = Duration(milliseconds: 1000 + (attempt * 500));
+          print('⏱️ Waiting ${delay.inMilliseconds}ms before retry...');
           await Future.delayed(delay);
         } else {
-          throw Exception('Failed to connect after $maxRetries attempts: $e');
+          throw Exception(
+            'Failed to connect after $maxRetries attempts. Please check: 1) Device is powered on, 2) Bluetooth is enabled, 3) Device is paired in Android settings. Error: $e',
+          );
         }
       }
     }
