@@ -1,22 +1,26 @@
-import 'dart:convert';
+// services/orientation_service.dart
+import 'package:flutter/services.dart';
 
+
+// services/robot_control_service.dart
 class RobotControlService {
+  // Default servo names for the 6-servo arm
   static const List<String> defaultServoNames = [
-    'Base (Servo 1)', // SERVO1 or SERVO_BASE - Pin 6
-    'Shoulder (Servo 2)', // SERVO2 or SERVO_SHOULDER - Pin 7
-    'Elbow (Servo 3)', // SERVO3 or SERVO_ELBOW - Pin 8
-    'Wrist Rotation (Servo 4)', // SERVO4 or SERVO_WRIST_ROT - Pin 9
-    'Wrist Tilt (Servo 5)', // SERVO5 or SERVO_WRIST_TILT - Pin 10
-    'Gripper (Servo 6)', // SERVO6 or SERVO_GRIPPER - Pin 11
+    'Base',
+    'Shoulder', 
+    'Elbow',
+    'Wrist R',
+    'Wrist T',
+    'Gripper'
   ];
 
+  // Default poses for the robot arm
   static const List<String> defaultPoses = [
-    'Home', // ARM_HOME
-    'Preset 1', // ARM_PRESET:1
-    'Preset 2', // ARM_PRESET:2
-    'Preset 3', // ARM_PRESET:3
-    'Preset 4', // ARM_PRESET:4
-    'Preset 5', // ARM_PRESET:5
+    'Home',
+    'Pickup',
+    'Place', 
+    'Rest',
+    'Extended'
   ];
 
   // MOTOR COMMANDS - match Arduino controller exactly
@@ -164,162 +168,87 @@ class RobotControlService {
     return 'SENSOR_STATUS';
   }
 
-  /// Send detailed sensor status request
-  static String sensorDetailedCommand() {
-    return 'SENSOR_DETAILED';
-  }
+  // Sensor commands
+  static String sensorStatusCommand() => 'SENSOR_STATUS';
+  static String sensorsEnableCommand() => 'SENSORS_ENABLE';
+  static String sensorsDisableCommand() => 'SENSORS_DISABLE';
+  static String collisionDistanceCommand(int distance) => 'COLLISION_DIST:$distance';
+  static String testSensorsCommand() => 'TEST_SENSORS';
+  static String calibrateSensorsCommand() => 'CALIBRATE_SENSORS';
 
-  /// Send enable sensors command
-  static String sensorsEnableCommand() {
-    return 'SENSORS_ENABLE';
-  }
-
-  /// Send disable sensors command
-  static String sensorsDisableCommand() {
-    return 'SENSORS_DISABLE';
-  }
-
-  /// Send collision distance setting command
-  static String collisionDistanceCommand(int distance) {
-    return 'COLLISION_DISTANCE:$distance';
-  }
-
-  /// Send collision aggressiveness setting command
-  static String collisionAggressivenessCommand(int level) {
-    return 'COLLISION_AGGRESSIVENESS:$level';
-  }
-
-  // TEST COMMANDS - match Arduino controller exactly
-
-  /// Send motor test command
-  static String motorTestCommand() {
-    return 'TEST_MOTORS';
-  }
-
-  /// Send servo test command
-  static String servoTestCommand() {
-    return 'TEST_SERVOS';
-  }
-
-  /// Send sensor test command
-  static String sensorTestCommand() {
-    return 'TEST_SENSORS';
-  }
-
-  /// Send calibration command
-  static String calibrateCommand() {
-    return 'CALIBRATE';
-  }
-
-  /// Send sensor calibration command
-  static String calibrateSensorsCommand() {
-    return 'CALIBRATE_SENSORS';
-  }
-
-  // DIAGNOSTIC COMMANDS - legacy compatibility (deprecated)
-
-  /// Legacy diagnostics command (now maps to debug)
-  @Deprecated('Use debugCommand instead')
-  static String diagnosticsCommand(bool enabled) {
-    return debugCommand(enabled);
-  }
-
-  /// Convert command to bytes for transmission
-  static List<int> commandToBytes(String command) {
-    return utf8.encode('$command\n');
-  }
-
-  /// Validate servo angle (0-180 degrees)
-  static bool isValidServoAngle(double angle) {
-    return angle >= 0 && angle <= 180;
-  }
-
-  /// Validate motor speed (0 to 100 percent for single direction)
-  static bool isValidMotorSpeed(int speed) {
-    return speed >= 0 && speed <= 100;
-  }
-
-  /// Validate tank drive speed (-100 to 100 percent)
-  static bool isValidTankSpeed(int speed) {
+  // Command validation
+  static bool isValidSpeed(int speed) {
     return speed >= -100 && speed <= 100;
   }
 
-  /// Validate global speed multiplier (20-100 percent)
-  static bool isValidGlobalSpeed(int speed) {
-    return speed >= 20 && speed <= 100;
+  static bool isValidAngle(int angle) {
+    return angle >= 0 && angle <= 180;
   }
 
-  /// Validate servo speed setting (1-5)
-  static bool isValidServoSpeed(int speed) {
-    return speed >= 1 && speed <= 5;
+  static bool isValidServoId(int servoId) {
+    return servoId >= 0 && servoId < 6;
   }
 
-  /// Validate collision distance (5-100 cm)
-  static bool isValidCollisionDistance(int distance) {
-    return distance >= 5 && distance <= 100;
+  // Parse response commands
+  static Map<String, dynamic>? parseStatusResponse(String response) {
+    try {
+      if (response.startsWith('STATUS_')) {
+        final parts = response.split(':');
+        if (parts.length >= 2) {
+          return {
+            'type': parts[0],
+            'data': parts.sublist(1).join(':'),
+            'timestamp': DateTime.now().toIso8601String(),
+          };
+        }
+      }
+    } catch (e) {
+      print('Error parsing status response: $e');
+    }
+    return null;
   }
 
-  /// Validate collision aggressiveness level (1-3)
-  static bool isValidAggressiveness(int level) {
-    return level >= 1 && level <= 3;
+  static Map<String, dynamic>? parseSensorResponse(String response) {
+    try {
+      if (response.startsWith('SENSOR_STATUS:')) {
+        final jsonStr = response.substring('SENSOR_STATUS:'.length);
+        // This would need a JSON parser in a real implementation
+        return {
+          'type': 'sensor_status',
+          'raw': jsonStr,
+          'timestamp': DateTime.now().toIso8601String(),
+        };
+      }
+    } catch (e) {
+      print('Error parsing sensor response: $e');
+    }
+    return null;
+  }
+}
+
+
+
+class OrientationService {
+  static Future<void> switchToLandscapeMode() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 
-  /// Clamp servo angle to valid range
-  static double clampServoAngle(double angle) {
-    return angle.clamp(0.0, 180.0);
+  static Future<void> switchToPortraitMode() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
   }
 
-  /// Clamp motor speed to valid range
-  static int clampMotorSpeed(int speed) {
-    return speed.clamp(0, 100);
-  }
-
-  /// Clamp tank drive speed to valid range
-  static int clampTankSpeed(int speed) {
-    return speed.clamp(-100, 100);
-  }
-
-  /// Clamp global speed to valid range
-  static int clampGlobalSpeed(int speed) {
-    return speed.clamp(20, 100);
-  }
-
-  /// Clamp servo speed to valid range
-  static int clampServoSpeed(int speed) {
-    return speed.clamp(1, 5);
-  }
-
-  /// Clamp collision distance to valid range
-  static int clampCollisionDistance(int distance) {
-    return distance.clamp(5, 100);
-  }
-
-  /// Clamp aggressiveness level to valid range
-  static int clampAggressiveness(int level) {
-    return level.clamp(1, 3);
-  }
-
-  /// Get command description for help/debugging
-  static String getCommandDescription(String command) {
-    if (command.startsWith('FORWARD:'))
-      return 'Move forward at specified speed';
-    if (command.startsWith('BACKWARD:'))
-      return 'Move backward at specified speed';
-    if (command.startsWith('LEFT:')) return 'Turn left at specified speed';
-    if (command.startsWith('RIGHT:')) return 'Turn right at specified speed';
-    if (command.startsWith('TANK:')) return 'Tank drive with left,right speeds';
-    if (command == 'STOP') return 'Stop all motors';
-    if (command.startsWith('SERVO')) return 'Control servo angle (0-180°)';
-    if (command == 'ARM_HOME') return 'Move arm to home position';
-    if (command.startsWith('ARM_PRESET:')) return 'Move arm to preset position';
-    if (command == 'GRIPPER_OPEN') return 'Open gripper';
-    if (command == 'GRIPPER_CLOSE') return 'Close gripper';
-    if (command == 'STATUS') return 'Get system status';
-    if (command.startsWith('SPEED:')) return 'Set global motor speed (20-100%)';
-    if (command.startsWith('SERVO_SPEED:'))
-      return 'Set servo movement speed (1-5)';
-    if (command == 'EMERGENCY') return 'Emergency stop all systems';
-    if (command == 'PING') return 'Connection test';
-    return 'Unknown command';
+  static Future<void> restoreAllOrientations() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 }
