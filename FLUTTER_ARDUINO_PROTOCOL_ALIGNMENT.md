@@ -1,11 +1,13 @@
 # Arduino-Flutter Communication Protocol Alignment
 
 ## Overview
+
 Successfully aligned the Flutter mobile app communication protocol with the optimized Arduino robot controller firmware. The Flutter app now sends commands in the exact format expected by the Arduino command processor.
 
 ## Command Mapping
 
 ### Motor Control Commands
+
 | Flutter Method | Arduino Command | Description |
 |---------------|-----------------|-------------|
 | `forwardCommand(60)` | `FORWARD:60` | Move forward at 60% speed |
@@ -16,6 +18,7 @@ Successfully aligned the Flutter mobile app communication protocol with the opti
 | `stopCommand()` | `STOP` | Stop all motors immediately |
 
 ### Servo Arm Commands
+
 | Flutter Method | Arduino Command | Description |
 |---------------|-----------------|-------------|
 | `servoCommand(0, 90)` | `SERVO1:90` | Set servo 1 (base) to 90 degrees |
@@ -27,6 +30,7 @@ Successfully aligned the Flutter mobile app communication protocol with the opti
 | `gripperCloseCommand()` | `GRIPPER_CLOSE` | Close gripper |
 
 ### System Commands
+
 | Flutter Method | Arduino Command | Description |
 |---------------|-----------------|-------------|
 | `statusCommand()` | `STATUS` | Request system status |
@@ -37,6 +41,7 @@ Successfully aligned the Flutter mobile app communication protocol with the opti
 | `pingCommand()` | `PING` | Connection test ping |
 
 ### Sensor Commands
+
 | Flutter Method | Arduino Command | Description |
 |---------------|-----------------|-------------|
 | `sensorStatusCommand()` | `SENSOR_STATUS` | Get sensor readings |
@@ -45,6 +50,7 @@ Successfully aligned the Flutter mobile app communication protocol with the opti
 | `collisionDistanceCommand(25)` | `COLLISION_DISTANCE:25` | Set collision detection distance to 25cm |
 
 ### Test Commands
+
 | Flutter Method | Arduino Command | Description |
 |---------------|-----------------|-------------|
 | `motorTestCommand()` | `TEST_MOTORS` | Run motor test sequence |
@@ -55,6 +61,7 @@ Successfully aligned the Flutter mobile app communication protocol with the opti
 ## Updated Files
 
 ### 1. RobotControlService.dart
+
 - **Location**: `/lib/screens/controls/services/robot_control_service.dart`
 - **Changes**: Complete rewrite to match Arduino command format
 - **Key Features**:
@@ -65,11 +72,13 @@ Successfully aligned the Flutter mobile app communication protocol with the opti
   - Proper parameter range validation and clamping
 
 ### 2. robot_control_screen.dart
+
 - **Location**: `/lib/screens/controls/robot_control_screen.dart`
 - **Changes**: Updated deprecated `diagnosticsCommand` calls to `debugCommand`
 - **Impact**: Debug mode toggle now sends `DEBUG:1/0` instead of old format
 
 ### 3. joystick_control_section.dart
+
 - **Location**: `/lib/screens/controls/components/joystick_control_section.dart`
 - **Changes**: Added comments explaining movement logic
 - **Impact**: Clarified tank drive logic for directional movement
@@ -77,6 +86,7 @@ Successfully aligned the Flutter mobile app communication protocol with the opti
 ## Servo Mapping
 
 ### Physical Servo Configuration
+
 ```
 SERVO1 (Base)         -> Pin 6  -> 0-180° rotation
 SERVO2 (Shoulder)     -> Pin 7  -> 0-180° elevation  
@@ -87,6 +97,7 @@ SERVO6 (Gripper)      -> Pin 11 -> 0-180° open/close
 ```
 
 ### Default Positions
+
 ```
 Home Position: All servos at 90°
 Preset 1-5: Configurable preset positions
@@ -95,6 +106,7 @@ Preset 1-5: Configurable preset positions
 ## Communication Flow
 
 ### Command Transmission
+
 1. Flutter UI triggers action (button press, slider change, etc.)
 2. UI calls appropriate RobotControlService method
 3. Method generates Arduino-compatible command string
@@ -104,6 +116,7 @@ Preset 1-5: Configurable preset positions
 7. Arduino sends response back to Flutter
 
 ### Example Communication Session
+
 ```
 Flutter -> Arduino: "FORWARD:60\n"
 Arduino -> Flutter: "FORWARD\n"
@@ -118,6 +131,7 @@ Arduino -> Flutter: "SYS:OK,BAT:85,MOT:IDLE,ARM:HOME,SENS:4\n"
 ## Validation & Error Handling
 
 ### Parameter Validation
+
 - **Servo angles**: 0-180° (clamped automatically)
 - **Motor speeds**: 0-100% for directional, -100 to 100% for tank drive
 - **Global speed**: 20-100% (minimum safety threshold)
@@ -125,6 +139,7 @@ Arduino -> Flutter: "SYS:OK,BAT:85,MOT:IDLE,ARM:HOME,SENS:4\n"
 - **Collision distance**: 5-100cm
 
 ### Error Recovery
+
 - Invalid parameters are automatically clamped to valid ranges
 - Failed commands trigger snackbar notifications in UI
 - Connection monitoring with automatic ping/reconnect
@@ -133,6 +148,7 @@ Arduino -> Flutter: "SYS:OK,BAT:85,MOT:IDLE,ARM:HOME,SENS:4\n"
 ## Testing & Verification
 
 ### Recommended Test Sequence
+
 1. **Connection**: Test with `PING` command
 2. **Motors**: Test basic movement (FORWARD, BACKWARD, LEFT, RIGHT)
 3. **Tank Drive**: Test differential drive (TANK:-50,50)
@@ -142,7 +158,9 @@ Arduino -> Flutter: "SYS:OK,BAT:85,MOT:IDLE,ARM:HOME,SENS:4\n"
 7. **Emergency**: Test EMERGENCY stop command
 
 ### Command Validation
+
 All commands can be validated using the `getCommandDescription()` method:
+
 ```dart
 String desc = RobotControlService.getCommandDescription("FORWARD:60");
 // Returns: "Move forward at specified speed"
@@ -151,11 +169,13 @@ String desc = RobotControlService.getCommandDescription("FORWARD:60");
 ## Performance Considerations
 
 ### Arduino Memory Impact
+
 - Optimized Arduino controller now has 3,168 bytes free memory
 - Command processing uses efficient char* parsing (no String objects)
 - Response generation uses pre-allocated message buffers
 
 ### Flutter Performance
+
 - Command generation is lightweight (static methods)
 - No unnecessary object creation during command transmission
 - Validation happens client-side to reduce Arduino load
@@ -163,10 +183,12 @@ String desc = RobotControlService.getCommandDescription("FORWARD:60");
 ## Backward Compatibility
 
 ### Deprecated Commands
+
 - `diagnosticsCommand()` -> Use `debugCommand()` instead
 - Old format commands (S:id,angle) -> Now uses (SERVOid:angle)
 
 ### Migration Notes
+
 - All old command references have been updated
 - Flutter app now fully compatible with optimized Arduino firmware
 - No changes needed to existing UI components (they use the service layer)
@@ -181,6 +203,7 @@ String desc = RobotControlService.getCommandDescription("FORWARD:60");
 ## Summary
 
 The Flutter-Arduino communication protocol is now fully aligned and optimized:
+
 - ✅ All commands use exact Arduino-expected format
 - ✅ Parameter validation prevents invalid commands  
 - ✅ Emergency stop and safety features maintained

@@ -204,7 +204,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         RobotControlService.globalSpeedCommand(globalSpeedMultiplier),
       );
       await Future.delayed(Duration(milliseconds: 100));
-      _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
+      _sendCommand(RobotControlService.debugCommand(motorDiagnostics));
 
       // Start monitoring connection
       _startConnectionMonitoring();
@@ -350,7 +350,7 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
     setState(() {
       motorDiagnostics = !motorDiagnostics;
     });
-    _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
+    _sendCommand(RobotControlService.debugCommand(motorDiagnostics));
   }
 
   void _testMotors() {
