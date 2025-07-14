@@ -312,13 +312,17 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
         // Switch to landscape mode for robot control
         orientation.OrientationService.switchToLandscapeMode();
 
-        // Set initial configuration
-        await Future.delayed(const Duration(milliseconds: 500));
+        // Set initial configuration with proper delays for HC modules
+        await Future.delayed(
+          const Duration(milliseconds: 1500),
+        ); // Longer delay for HC modules
         _sendCommand(
           RobotControlService.globalSpeedCommand(globalSpeedMultiplier),
         );
-        await Future.delayed(const Duration(milliseconds: 300));
-        _sendCommand(RobotControlService.diagnosticsCommand(motorDiagnostics));
+        await Future.delayed(
+          const Duration(milliseconds: 800),
+        ); // Increased delay
+        _sendCommand(RobotControlService.debugCommand(motorDiagnostics));
 
         // Start monitoring connection
         _startConnectionMonitoring();
@@ -400,13 +404,14 @@ class _RobotControllerScreenState extends State<RobotControllerScreen> {
   void _startConnectionMonitoring() {
     _failedPingCount = 0;
     _connectionMonitor?.cancel();
-    _connectionMonitor = Timer.periodic(const Duration(seconds: 5), (timer) {
+    // Reduced frequency for HC modules - they are more sensitive
+    _connectionMonitor = Timer.periodic(const Duration(seconds: 15), (timer) {
       if (connection != null && isConnected) {
         // Send a ping command to check if connection is still alive
         try {
           // Check if we should pause ping during network operations
           if (!_pauseNetworkOperations) {
-            _sendCommand('PING');
+            _sendCommand('STATUS'); // Use STATUS instead of PING for HC modules
             // Reset failed count on successful ping
             if (_failedPingCount > 0) {
               print(

@@ -304,24 +304,26 @@ class CrossPlatformBluetoothService {
           '🔗 Connecting to ${device.name} (${device.address}) - Attempt $attempt/$maxRetries',
         );
 
-        // Close any existing connections first
+        // Close any existing connections first - improved for HC modules
         try {
           final existingConnection = await mobile.BluetoothConnection.toAddress(
             device.address,
-          ).timeout(Duration(seconds: 1));
+          ).timeout(Duration(seconds: 2)); // Reduced timeout for HC modules
           await existingConnection.close();
-          await Future.delayed(Duration(milliseconds: 500));
+          await Future.delayed(
+            Duration(milliseconds: 1000),
+          ); // Longer delay for HC modules
         } catch (_) {
           // No existing connection, continue
         }
 
-        // Attempt connection with timeout
+        // Attempt connection with timeout - optimized for HC modules
         final connection = await mobile.BluetoothConnection.toAddress(
           device.address,
-        ).timeout(Duration(seconds: 15));
+        ).timeout(Duration(seconds: 20)); // Increased timeout for HC modules
 
-        // Verify connection is stable
-        await Future.delayed(Duration(milliseconds: 1000));
+        // Minimal stability test for HC modules
+        await Future.delayed(Duration(milliseconds: 300));
 
         if (connection.isConnected) {
           print('✅ Successfully connected to ${device.name}');
