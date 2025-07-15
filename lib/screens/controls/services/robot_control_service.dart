@@ -59,7 +59,7 @@ class RobotControlService {
   /// Send individual servo angle command (SERVO1-SERVO6)
   static String servoCommand(int servoId, int angle) {
     // Convert 0-based index to 1-based servo number
-    return 'SE${servoId + 1}:$angle';
+    return 'SERVO${servoId + 1}:$angle';
   }
 
   /// Send alternative servo command using named servos
