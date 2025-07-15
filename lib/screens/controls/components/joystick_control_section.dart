@@ -201,42 +201,42 @@ class JoystickControlSection extends StatelessWidget {
             const SizedBox(height: 20),
 
             // Speed Preset Buttons
-            const Text(
-              'Speed Presets',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildSpeedPresetButton(
-                    label: 'Slow',
-                    speed: 30,
-                    color: Colors.blue,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildSpeedPresetButton(
-                    label: 'Medium',
-                    speed: 60,
-                    color: Colors.green,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildSpeedPresetButton(
-                    label: 'Fast',
-                    speed: 90,
-                    color: Colors.orange,
-                  ),
-                ),
-              ],
-            ),
+            // const Text(
+            //   'Speed Presets',
+            //   style: TextStyle(
+            //     fontSize: 14,
+            //     fontWeight: FontWeight.w600,
+            //     color: Colors.grey,
+            //   ),
+            // ),
+            // const SizedBox(height: 12),
+            // Row(
+            //   children: [
+            //     Expanded(
+            //       child: _buildSpeedPresetButton(
+            //         label: 'Slow',
+            //         speed: 30,
+            //         color: Colors.blue,
+            //       ),
+            //     ),
+            //     const SizedBox(width: 8),
+            //     Expanded(
+            //       child: _buildSpeedPresetButton(
+            //         label: 'Medium',
+            //         speed: 60,
+            //         color: Colors.green,
+            //       ),
+            //     ),
+            //     const SizedBox(width: 8),
+            //     Expanded(
+            //       child: _buildSpeedPresetButton(
+            //         label: 'Fast',
+            //         speed: 90,
+            //         color: Colors.orange,
+            //       ),
+            //     ),
+            //  ],
+            //),
           ],
         ),
       ),
