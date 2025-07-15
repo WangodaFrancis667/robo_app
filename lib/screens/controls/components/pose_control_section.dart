@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:robo_app/utils/colors.dart';
 
 class PoseControlSection extends StatelessWidget {
   final List<String> poses;
@@ -39,7 +40,7 @@ class PoseControlSection extends StatelessWidget {
                 switch (pose) {
                   case 'Home':
                     icon = Icons.home;
-                    color = Colors.blue;
+                    color = Colors.red;
                     break;
                   case 'Pick':
                     icon = Icons.pan_tool;
@@ -55,7 +56,7 @@ class PoseControlSection extends StatelessWidget {
                     break;
                   default:
                     icon = Icons.settings;
-                    color = Colors.grey;
+                    color = Colors.black;
                 }
 
                 return ElevatedButton.icon(
@@ -63,7 +64,7 @@ class PoseControlSection extends StatelessWidget {
                   icon: Icon(icon),
                   label: Text(pose),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: color.withValues(alpha: 0.1),
+                    backgroundColor: Colors.white,//.withValues(alpha: 0.1),
                     foregroundColor: color,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
