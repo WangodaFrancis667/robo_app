@@ -29,7 +29,8 @@ class MainDashboardState extends State<MainDashboard> {
   List<Widget> get _screens => [
     LiveMonitoringScreen(),
     RobotControllerApp(onConnectionStatusChanged: _onRobotConnectionChanged),
-    SensorDashboardScreen(),
+    // Pass standalone mode as true for the sensor dashboard tab
+    const RobotSensorDashboard(standaloneMode: true),
     WeedingLogsScreen(),
   ];
 
@@ -53,6 +54,8 @@ class MainDashboardState extends State<MainDashboard> {
               onTap: _onTabChanged,
               selectedItemColor: Colors.green,
               unselectedItemColor: Colors.grey,
+              backgroundColor: Colors.white,
+              elevation: 8,
               items: const [
                 BottomNavigationBarItem(
                   icon: Icon(Icons.videocam),
@@ -66,10 +69,10 @@ class MainDashboardState extends State<MainDashboard> {
                   icon: Icon(Icons.sensors),
                   label: 'Sensors',
                 ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.history),
-                  label: 'Logs',
-                ),
+                // BottomNavigationBarItem(
+                //   icon: Icon(Icons.history),
+                //   label: 'Logs',
+                // ),
               ],
             ),
       // Show a floating action button to go back when bottom bar is hidden
