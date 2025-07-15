@@ -249,8 +249,11 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Live Robot Monitoring'),
-        backgroundColor: Colors.green,
+        title: const Text(
+          'Live Robot Monitoring',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.green[800],
         elevation: 0,
         actions: [
           Container(
@@ -306,22 +309,22 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
               child: Column(
                 children: [
                   // Current Task Card
-                  Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      leading: const Icon(Icons.task_alt, color: Colors.blue),
-                      title: const Text('Current Task'),
-                      subtitle: Text(currentTask),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.refresh),
-                        onPressed: _refreshStream,
-                        tooltip: 'Refresh Camera Stream',
-                      ),
-                    ),
-                  ),
+                  // Card(
+                  //   elevation: 4,
+                  //   shape: RoundedRectangleBorder(
+                  //     borderRadius: BorderRadius.circular(8),
+                  //   ),
+                  //   child: ListTile(
+                  //     leading: const Icon(Icons.task_alt, color: Colors.blue),
+                  //     title: const Text('Current Task'),
+                  //     subtitle: Text(currentTask),
+                  //     trailing: IconButton(
+                  //       icon: const Icon(Icons.refresh),
+                  //       onPressed: _refreshStream,
+                  //       tooltip: 'Refresh Camera Stream',
+                  //     ),
+                  //   ),
+                  // ),
                   const SizedBox(height: 16),
 
                   // Emergency Controls
@@ -350,24 +353,24 @@ class _LiveMonitoringScreenState extends State<LiveMonitoringScreen> {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _returnToBase(),
-                          icon: const Icon(Icons.home),
-                          label: const Text(
-                            'Return to Base',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            elevation: 5,
-                          ),
-                        ),
-                      ),
+                      //Expanded(
+                      //child: ElevatedButton.icon(
+                      //  onPressed: () => _returnToBase(),
+                      //  icon: const Icon(Icons.home),
+                      //  label: const Text(
+                      //    'Return to Base',
+                      //    style: TextStyle(color: Colors.white),
+                      //  ),
+                      //  style: ElevatedButton.styleFrom(
+                      //    backgroundColor: Colors.orange,
+                      //    padding: const EdgeInsets.symmetric(vertical: 16),
+                      //    shape: RoundedRectangleBorder(
+                      //      borderRadius: BorderRadius.circular(8),
+                      //   ),
+                      //  elevation: 5,
+                      //),
+                      //),
+                      //),
                     ],
                   ),
                 ],
