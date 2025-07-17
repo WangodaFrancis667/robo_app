@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 class VideoService {
-  static const String _defaultRaspberryPiIP = '192.168.1.8';
+  static const String _defaultRaspberryPiIP = '192.168.137.4';
   static const int _defaultPort = 8080;
   static const String _defaultEndpoint = 'my_mac_camera';
 
@@ -44,7 +44,7 @@ class VideoService {
         _isLoadingStream = false;
         _isStreamActive = true;
         _errorMessage = '';
-      } else {
+      } else { 
         _isLoadingStream = false;
         _isStreamActive = false;
         _errorMessage = 'Camera server not available';
