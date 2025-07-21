@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:robo_app/utils/colors.dart';
 
 class PoseControlSection extends StatelessWidget {
   final List<String> poses;
