@@ -1,9 +1,19 @@
 /**********************************************************************
  *  config.h - System Configuration and Constants
  *  Contains all pin definitions, constants, and configuration settings
- *********************************************************************/
+ ********************************************************************# System commands (shortened)
+#define CMD_STATUS "ST"
+#define CMD_SPEED "SP"
+#define CMD_DEBUG "D"
+#define CMD_EMERGENCY "E"
+#define CMD_PING "PN"
 
-#ifndef CONFIG_H
+// Relay commands
+#define CMD_POWER_ON "PON"
+#define CMD_POWER_OFF "POFF"
+#define CMD_POWER_TOGGLE "PTOG"
+
+// Response codesfndef CONFIG_H
 #define CONFIG_H
 
 #include "utils.h"
@@ -86,6 +96,9 @@
 
 // Emergency stop button (optional)
 #define EMERGENCY_STOP_PIN 12
+
+// Power relay (JOC-3FF-S-Z)
+#define POWER_RELAY_PIN 11
 
 // ========== SENSOR CONFIGURATION ==========
 

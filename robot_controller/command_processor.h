@@ -6,6 +6,7 @@
 #include "config.h"
 #include "memory_optimization.h"
 #include "motor_controller.h"
+#include "relay_controller.h"
 #include "sensor_status.h"
 #include "servo_arm.h"
 #include "system_status.h"
@@ -297,9 +298,10 @@ void CommandProcessor::processServoCommand(const Command &cmd) {
 void CommandProcessor::processSystemCommand(const Command &cmd) {
   if (cmd.type == CMD_STATUS) {
     // Use char buffers instead of String objects for better memory efficiency
-    char motorStatus[64], servoStatus[64], systemStatus[64];
+    char motorStatus[64], servoStatus[64], systemStatus[64], relayStatus[64];
     MotorController::getStatus(motorStatus, sizeof(motorStatus));
     ServoArm::getStatus(servoStatus, sizeof(servoStatus));
+    RelayController::getStatus(relayStatus, sizeof(relayStatus));
     // SystemStatus::getStatus(systemStatus, sizeof(systemStatus));  //
     // Temporarily disabled
     strcpy_P(systemStatus, PSTR("SYS:OK"));
@@ -317,6 +319,14 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
       char *buffer = MessageBuffer::getBuffer();
       snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("STATUS_SERVOS:%s"),
                  servoStatus);
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
+
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("STATUS_RELAY:%s"),
+                 relayStatus);
       BluetoothHandler::sendMessage(buffer);
       MessageBuffer::releaseBuffer();
     }
@@ -459,6 +469,27 @@ void CommandProcessor::processSystemCommand(const Command &cmd) {
     SensorManager::calibrateSensors();
     BluetoothHandler::sendResponse("CALIBRATE_SENSORS");
 
+  } else if (strcmp(cmd.type, CMD_POWER_ON) == 0) {
+    RelayController::powerOn();
+    BluetoothHandler::sendMessage("POWER_ON");
+    BluetoothHandler::sendResponse(CMD_POWER_ON);
+
+  } else if (strcmp(cmd.type, CMD_POWER_OFF) == 0) {
+    RelayController::powerOff();
+    BluetoothHandler::sendMessage("POWER_OFF");
+    BluetoothHandler::sendResponse(CMD_POWER_OFF);
+
+  } else if (strcmp(cmd.type, CMD_POWER_TOGGLE) == 0) {
+    RelayController::toggle();
+    if (MessageBuffer::isAvailable()) {
+      char *buffer = MessageBuffer::getBuffer();
+      snprintf_P(buffer, MAX_MESSAGE_LENGTH, PSTR("POWER_TOGGLED:%s"), 
+                 RelayController::isPowerOn() ? "ON" : "OFF");
+      BluetoothHandler::sendMessage(buffer);
+      MessageBuffer::releaseBuffer();
+    }
+    BluetoothHandler::sendResponse(CMD_POWER_TOGGLE);
+
   } else {
     DEBUG_PRINT_P("❌ Unknown command: ");
     DEBUG_PRINTLN(cmd.type);
@@ -531,6 +562,11 @@ void CommandProcessor::sendCommandHelp() {
   BluetoothHandler::sendMessage("  TEST_SERVOS      - Test all servos");
   BluetoothHandler::sendMessage("  CALIBRATE        - Calibrate servos");
   BluetoothHandler::sendMessage("  PING             - Connection test");
+  BluetoothHandler::sendMessage("");
+  BluetoothHandler::sendMessage("POWER CONTROL:");
+  BluetoothHandler::sendMessage("  PON              - Turn power relay ON");
+  BluetoothHandler::sendMessage("  POFF             - Turn power relay OFF");
+  BluetoothHandler::sendMessage("  PTOG             - Toggle power relay");
   BluetoothHandler::sendMessage("=== END HELP ===");
 }
 

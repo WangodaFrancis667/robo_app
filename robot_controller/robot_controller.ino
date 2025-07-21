@@ -17,6 +17,7 @@
 #include "config.h"
 #include "memory_optimization.h"
 #include "motor_controller.h"
+#include "relay_controller.h"
 #include "sensor_manager.h"
 #include "sensor_status.h"
 #include "servo_arm.h"
@@ -131,6 +132,9 @@ void loop() {
   // Update servo arm
   ServoArm::update();
 
+  // Update relay controller
+  RelayController::update();
+
   // Update sensors less frequently to improve responsiveness and save memory
   static unsigned long lastSensorUpdate = 0;
   if (millis() - lastSensorUpdate >= SENSOR_UPDATE_INTERVAL) {
@@ -214,6 +218,9 @@ void initializeSystem() {
 
   // Initialize system status
   // SystemStatus::init();  // Temporarily disabled for compilation
+
+  // Initialize relay controller first (power management)
+  RelayController::init();
 
 #if !SERIAL_TESTING_MODE
   // Initialize Bluetooth communication only in normal mode
