@@ -8,7 +8,11 @@
 
 #include "config.h"
 #include "utils.h"
-#include <Servo.h>
+#ifdef ESP32
+  #include <ESP32Servo.h>
+#else
+  #include <Servo.h>
+#endif
 
 class ServoArm {
 private:
