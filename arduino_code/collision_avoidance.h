@@ -7,6 +7,7 @@
 #ifndef COLLISION_AVOIDANCE_H
 #define COLLISION_AVOIDANCE_H
 
+
 #include "config.h"
 #include "memory_optimization.h"
 #include "sensor_manager.h"
@@ -75,7 +76,6 @@ bool CollisionAvoidance::wasMovingForward = true;
 
 void CollisionAvoidance::init() {
   DEBUG_PRINTLN_P("Initializing Collision Avoidance...");
-
   collisionAvoidanceEnabled = true;
   emergencyStopActive = false;
   lastCollisionWarning = 0;
@@ -130,7 +130,7 @@ void CollisionAvoidance::update() {
 
 void CollisionAvoidance::enable() {
   collisionAvoidanceEnabled = true;
-  DEBUG_PRINTLN("🛡 Collision avoidance ENABLED");
+  DEBUG_PRINTLN("🛡 Collision avoidance ENABLED successfuly");
 }
 
 void CollisionAvoidance::disable() {
