@@ -85,6 +85,7 @@ private:
 public:
   static void init() {
     lastFreeMemory = getFreeMemory();
+    
     lastCheck = millis();
   }
 
@@ -106,7 +107,7 @@ public:
         Serial.println(F(" bytes"));
         return false; // Critical
       } else if (currentMemory < LOW_MEMORY_THRESHOLD) {
-        Serial.print(F("⚠ WARNING: Low memory: "));
+        Serial.print(F("⚠ WARNING: Low memory:  "));
         Serial.print(currentMemory);
         Serial.println(F(" bytes"));
       }
@@ -171,4 +172,4 @@ public:
   }
 };
 
-#endif // MEMORY_OPTIMIZATION_H
+#endif // MEMORY_OPTIMIZATION_H 
